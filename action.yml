@@ -5,6 +5,7 @@ inputs:
   github-token:
     description: "GitHub token with repo write permissions"
     required: true
+    default: ${{ github.token }}
 runs:
   using: "docker"
   image: "Dockerfile"

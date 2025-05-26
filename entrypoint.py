@@ -115,6 +115,14 @@ def get_file_content(filename, github_token, repo_fullname, pr_number):
 def main():
     # Get inputs from environment variables (set by GitHub Actions)
     github_token = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("INPUT_GITHUB-TOKEN")
+    
+    # Debug token permissions (output first few chars only for security)
+    if github_token:
+        token_preview = github_token[:4] + "..." if len(github_token) > 4 else "invalid"
+        print(f"Using GitHub token starting with: {token_preview}")
+    else:
+        print("WARNING: No GitHub token provided!")
+    
     repo_fullname = os.environ.get("GITHUB_REPOSITORY")
     
     # Parse the GitHub event data
@@ -288,17 +296,36 @@ def main():
     # Post comment to the PR
     print(f"Commenting on PR #{pr_number}")
     
-    comment_url = f"https://api.github.com/repos/{repo_fullname}/issues/{pr_number}/comments"
-    headers = {
-        "Authorization": f"token {github_token}",
-        "Content-Type": "application/json"
-    }
-    
-    comment_payload = {"body": full_comment}
-    response = requests.post(comment_url, headers=headers, json=comment_payload)
-    response.raise_for_status()
-    
-    print("Comment posted successfully!")
+    try:
+        comment_url = f"https://api.github.com/repos/{repo_fullname}/issues/{pr_number}/comments"
+        print(f"API URL: {comment_url}")
+        
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json",
+            "Content-Type": "application/json"
+        }
+        
+        comment_payload = {"body": full_comment}
+        
+        # Debug request
+        print(f"Sending comment with headers: {headers['Accept']}")
+        print(f"Comment length: {len(full_comment)} characters")
+        
+        response = requests.post(comment_url, headers=headers, json=comment_payload)
+        
+        # Print response details
+        print(f"Response status code: {response.status_code}")
+        if response.status_code != 201:  # 201 is the success code for created
+            print(f"Response headers: {response.headers}")
+            print(f"Response content: {response.text[:500]}...")  # Print first 500 chars
+            
+        response.raise_for_status()
+        print("Comment posted successfully!")
+    except Exception as e:
+        print(f"Error posting comment: {str(e)}")
+        print("Continuing without commenting on PR...")
+        # Don't exit, so we can see the output and debug
 
 
 if __name__ == "__main__":
