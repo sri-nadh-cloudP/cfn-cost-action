@@ -1,0 +1,12 @@
+# action.yml
+name: "CFN Cost Commenter"
+description: "Detects changed CloudFormation templates, computes costs, and comments on the PR"
+inputs:
+  github-token:
+    description: "GitHub token with repo write permissions"
+    required: true
+runs:
+  using: "docker"
+  image: "Dockerfile"
+  args:
+    - ${{ inputs.github-token }}

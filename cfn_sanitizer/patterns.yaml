@@ -1,0 +1,61 @@
+patterns:
+  # 1) Regex-only rules
+  aws_access_key_id:
+    regex: '(?:ASIA|AKIA|AROA|AIDA)[A-Z0-9]{16}'
+    description: AWS Access Key IDs
+
+  aws_secret_access_key:
+    regex: '[A-Za-z0-9/+=]{40}'
+    description: AWS Secret Access Keys
+
+  tls_private_key:
+    regex: '-----BEGIN (?:RSA|EC|DSA)? PRIVATE KEY-----[\\s\\S]+?-----END (?:RSA|EC|DSA)? PRIVATE KEY-----'
+    description: PEM‑encoded private keys
+
+  oauth_token:
+    regex: '(?:ghp_[A-Za-z0-9]{36}|xox[baprs]-[A-Za-z0-9]{10,48})'
+    description: GitHub or Slack style OAuth tokens
+
+  ssh_private_key:
+    regex: '-----BEGIN OPENSSH PRIVATE KEY-----[\\s\\S]+?-----END OPENSSH PRIVATE KEY-----'
+    description: OpenSSH private keys
+
+  # General credential regex for mixed content scanning (matches common credential patterns in descriptions, etc)
+  general_credentials:
+    regex: '(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)[=:"\s]+([\w\d@$!%*#?&\-_+\.,;:]+)'
+    description: General credentials in descriptions, comments, etc
+
+  # 2) Key-only rules
+  rds_master_password:
+    keys:
+      - MasterUserPassword
+      - MasterUsername
+    description: RDS master user passwords
+
+  generic_secret:
+    keys:
+      - SecretAccessKey
+      - Password
+      - Passwords
+      - UserData
+      - UserName
+      - Token
+      - ApiKey
+      - API_TOKEN
+      - Value
+    description: Miscellaneous tokens, API keys, and secrets
+
+  # 3) Combined key+regex rule for Defaults under sensitive params
+  generic_password:
+    keys:
+      - Default
+    regex: '(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*()]).*'
+    param_name_regex: '.*(Password|Key|Secret|Token).*'
+    description: Default values for parameters whose names imply secrets
+
+  # 4) For detecting all values in parameter defaults
+  parameter_defaults:
+    keys:
+      - Default
+    description: Any parameter defaults that might need sanitization
+
