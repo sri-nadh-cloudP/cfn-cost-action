@@ -182,7 +182,7 @@ def main():
         })
     
     # Send to cost server
-    cost_endpoint = "https://your-cost-api.example.com/evaluate"
+    cost_endpoint = "https://6de6-2403-a080-832-eef8-d0a3-45db-a731-bbc0.ngrok-free.app/evaluate"
     print(f"Sending sanitized templates to {cost_endpoint}")
     
     headers = {"Content-Type": "application/json"}
