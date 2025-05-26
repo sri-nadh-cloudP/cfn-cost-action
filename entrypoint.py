@@ -234,98 +234,60 @@ def main():
     
     cost_data_list = response.json()
     
-    # Create a beautiful GitHub comment with collapsible sections
-    main_comment = "### 💰 CloudFormation Cost Estimation\n\n"
-    total_cost = 0.0
-    future_cost = 0.0
+    # Create a beautiful GitHub comment with collapsible sections for EACH template
+    print("Generating GitHub PR comments...")
     
-    # Add a summary table for all templates
-    main_comment += "| CloudFormation Template | Current Cost | Future Cost | Status |\n"
-    main_comment += "|------------------------|--------------|-------------|--------|\n"
-    
-    # Create detailed comments for each template
-    detailed_comments = []
+    # Process each template separately and post individual comments
     for i, template_data in enumerate(cost_data_list):
         template_name = template_data.get("filename")
+        print(f"Processing comment for template: {template_name}")
         
         # Extract template costs
         try:
             template_output = template_data.get("output", {})
             
-            # Check if validation succeeded
-            validation_output = template_output.get('Validation_Output', 'Validation failed')
-            status = "✅" if validation_output == 'Template validated successfully.' else "❌"
-            
-            # Get costs if validation succeeded
-            if status == "✅":
-                final_cost = template_output.get('Final_Infra_Cost', '')
-                monthly_cost_match = re.search(r'Total Monthly Cost:\s*([\d.]+)', final_cost)
-                current_cost = float(monthly_cost_match.group(1)) if monthly_cost_match else 0.0
-                
-                future_cost_match = re.search(r'Total Future Monthly Cost :\s*([\d.]+)', final_cost)
-                template_future_cost = float(future_cost_match.group(1)) if future_cost_match else 0.0
-                
-                total_cost += current_cost
-                future_cost += template_future_cost
-            else:
-                current_cost = 0.0
-                template_future_cost = 0.0
-            
-            # Add row to summary table
-            main_comment += f"| [{template_name}](#{template_name.replace('.', '')}) | ${current_cost:.2f} | ${template_future_cost:.2f} | {status} |\n"
-            
-            # Create detailed comment for this template
+            # Generate comment for this template using the helper function
             from create_cost_comment import create_cost_comment
             template_comment = create_cost_comment(template_name, template_output)
-            template_comment = f"<a name='{template_name.replace('.', '')}'></a>\n\n{template_comment}\n\n---\n\n"
-            detailed_comments.append(template_comment)
+            
+            # Post comment to the PR
+            print(f"Posting comment for template: {template_name}")
+            
+            try:
+                comment_url = f"https://api.github.com/repos/{repo_fullname}/issues/{pr_number}/comments"
+                print(f"API URL: {comment_url}")
+                
+                headers = {
+                    "Authorization": f"token {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "Content-Type": "application/json"
+                }
+                
+                comment_payload = {"body": template_comment}
+                
+                # Debug request
+                print(f"Sending comment with headers: {headers['Accept']}")
+                print(f"Comment length: {len(template_comment)} characters")
+                
+                response = requests.post(comment_url, headers=headers, json=comment_payload)
+                
+                # Print response details
+                print(f"Response status code: {response.status_code}")
+                if response.status_code != 201:  # 201 is the success code for created
+                    print(f"Response headers: {response.headers}")
+                    print(f"Response content: {response.text[:500]}...")  # Print first 500 chars
+                    
+                response.raise_for_status()
+                print(f"Comment for {template_name} posted successfully!")
+            except Exception as e:
+                print(f"Error posting comment for {template_name}: {str(e)}")
+                print("Continuing with next template...")
             
         except Exception as e:
             print(f"Error processing template {template_name}: {str(e)}")
-            main_comment += f"| {template_name} | Error | Error | ❌ |\n"
+            continue
     
-    # Add total cost to main comment
-    main_comment += f"\n**Total Infrastructure Cost: ${total_cost:.2f}**"
-    if future_cost > 0:
-        main_comment += f" **(Future: ${future_cost:.2f})**"
-    main_comment += "\n\n---\n\n"
-    
-    # Combine main comment with detailed comments
-    full_comment = main_comment + "".join(detailed_comments)
-    
-    # Post comment to the PR
-    print(f"Commenting on PR #{pr_number}")
-    
-    try:
-        comment_url = f"https://api.github.com/repos/{repo_fullname}/issues/{pr_number}/comments"
-        print(f"API URL: {comment_url}")
-        
-        headers = {
-            "Authorization": f"token {github_token}",
-            "Accept": "application/vnd.github.v3+json",
-            "Content-Type": "application/json"
-        }
-        
-        comment_payload = {"body": full_comment}
-        
-        # Debug request
-        print(f"Sending comment with headers: {headers['Accept']}")
-        print(f"Comment length: {len(full_comment)} characters")
-        
-        response = requests.post(comment_url, headers=headers, json=comment_payload)
-        
-        # Print response details
-        print(f"Response status code: {response.status_code}")
-        if response.status_code != 201:  # 201 is the success code for created
-            print(f"Response headers: {response.headers}")
-            print(f"Response content: {response.text[:500]}...")  # Print first 500 chars
-            
-        response.raise_for_status()
-        print("Comment posted successfully!")
-    except Exception as e:
-        print(f"Error posting comment: {str(e)}")
-        print("Continuing without commenting on PR...")
-        # Don't exit, so we can see the output and debug
+    print("All template comments processed!")
 
 
 if __name__ == "__main__":
