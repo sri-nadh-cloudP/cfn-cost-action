@@ -13,6 +13,9 @@ WORKDIR /app
 # Install the local cfn-sanitizer module
 RUN pip install .
 
+# Fix git permissions for GitHub Actions
+RUN git config --global --add safe.directory /github/workspace
+
 # Make entrypoint executable
 RUN chmod +x /app/entrypoint.py
 

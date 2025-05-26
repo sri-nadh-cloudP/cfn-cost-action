@@ -5,11 +5,9 @@ import base64
 import subprocess
 import requests
 import re
-from typing import Dict, TypedDict
+import tempfile
+from typing import Dict, List
 from pathlib import Path
-from cfn_sanitizer import sanitize_template
-from cfn_sanitizer.scanner import load_template
-from cfn_sanitizer.utils import save_template
 
 
 def run_command(cmd, check=True):
@@ -19,6 +17,17 @@ def run_command(cmd, check=True):
     if result.stderr and not check:
         print(f"Command stderr: {result.stderr}")
     return result.stdout.strip()
+
+
+def sanitize_template_cli(input_path, output_path):
+    """Sanitize a CloudFormation template using the cfn-sanitizer CLI"""
+    try:
+        cmd = f"cfn-sanitizer -i {input_path} -o {output_path}"
+        result = run_command(cmd)
+        return True
+    except Exception as e:
+        print(f"Error sanitizing template: {str(e)}")
+        return False
 
 
 def get_changed_files(base_branch, pr_number, github_token, repo_fullname):
@@ -53,91 +62,6 @@ def get_changed_files(base_branch, pr_number, github_token, repo_fullname):
     except Exception as e:
         print(f"Error getting changed files: {str(e)}")
         return []
-
-
-class OutputState(TypedDict):
-    Cost_Results: Dict[str, str]
-    Service_Cost_Collector: Dict[str, str]
-    Final_Infra_Cost: str
-    Validation_Output: str
-
-
-def extract_total_cost(service_cost: str) -> str:
-    """Extract the total monthly cost from a service cost string"""
-    match = re.search(r'Total Monthly Cost:\s*([\d.]+)', service_cost)
-    if match:
-        return match.group(1)
-    return "N/A"
-
-
-def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
-    """Create a GitHub comment with collapsible sections for cost breakdown"""
-    
-    # Check if validation failed
-    if cost_data['Validation_Output'] != 'Template validated successfully.':
-        return f"""### ❌ Template Validation Failed: {template_name}
-
-<details>
-<summary><b>Validation Output</b></summary>
-
-```
-{cost_data['Validation_Output']}
-```
-</details>
-"""
-    
-    # Start building the comment with header
-    comment = f"### 💰 CloudFormation Cost Estimation for `{template_name}`\n\n"
-    
-    # Add the final infrastructure cost
-    final_cost = cost_data['Final_Infra_Cost'].strip()
-    monthly_cost_match = re.search(r'Total Monthly Cost:\s*([\d.]+)', final_cost)
-    monthly_cost = monthly_cost_match.group(1) if monthly_cost_match else "N/A"
-    
-    future_cost_match = re.search(r'Total Future Monthly Cost :\s*([\d.]+)', final_cost)
-    future_cost = f" (Future: ${future_cost_match.group(1)})" if future_cost_match else ""
-    
-    comment += f"**Total Monthly Cost: ${monthly_cost}{future_cost}**\n\n"
-    
-    # Add a summary table of service costs
-    comment += "| AWS Service | Monthly Cost |\n|------------|-------------|\n"
-    
-    for service_name, service_cost in cost_data['Service_Cost_Collector'].items():
-        total_cost = extract_total_cost(service_cost)
-        formatted_service_name = service_name.replace('_', ' ')
-        comment += f"| {formatted_service_name} | ${total_cost} |\n"
-    
-    comment += "\n"
-    
-    # Add collapsible details for each service
-    for service_name, detailed_cost in cost_data['Cost_Results'].items():
-        formatted_service_name = service_name.replace('_', ' ')
-        
-        comment += f"<details>\n<summary><b>{formatted_service_name} Details</b></summary>\n\n"
-        
-        # Extract individual resource costs and create nested collapsible sections
-        resource_sections = re.split(r'\nIndividual Resource Costs:', detailed_cost)
-        
-        for i, section in enumerate(resource_sections):
-            if i > 0:  # Skip the first split since it's not a separate resource
-                section = "Individual Resource Costs:" + section
-            
-            # Extract resource type
-            resource_type_match = re.search(r'ResourceType:\s*([^\n]+)', section)
-            if resource_type_match:
-                resource_type = resource_type_match.group(1).strip()
-                
-                # Create nested collapsible for individual resource
-                if i > 0:  # Only create nested dropdowns for additional resources
-                    comment += f"<details>\n<summary><b>{resource_type}</b></summary>\n\n"
-                    comment += f"```\n{section.strip()}\n```\n\n"
-                    comment += "</details>\n\n"
-                else:
-                    comment += f"```\n{section.strip()}\n```\n\n"
-        
-        comment += "</details>\n\n"
-    
-    return comment
 
 
 def get_file_content(filename, github_token, repo_fullname, pr_number):
@@ -198,6 +122,9 @@ def main():
         with open('/tmp/git-credentials', 'w') as f:
             f.write(f"https://x-access-token:{github_token}@github.com\n")
         
+        # Add repository to safe directories
+        run_command("git config --global --add safe.directory /github/workspace", check=False)
+        
         # Try to fetch, but don't fail if it doesn't work
         print(f"Fetching base branch: {base_branch}")
         try:
@@ -219,38 +146,35 @@ def main():
     sanitized_dir = Path("./sanitized_templates")
     sanitized_dir.mkdir(exist_ok=True)
     
+    # Create temp directory for original templates
+    temp_dir = Path("./temp_templates")
+    temp_dir.mkdir(exist_ok=True)
+    
     # Sanitize each changed template
     sanitized_list = []
     for file_path in changed_files:
         try:
             file_path_obj = Path(file_path)
             base_name = file_path_obj.name
+            temp_path = temp_dir / base_name
             out_path = sanitized_dir / base_name
             
             print(f"Processing {file_path}...")
             
-            # Get file content
+            # Get file content and save to temp file
             try:
-                # Try to get file content via GitHub API if local access fails
                 template_content = get_file_content(file_path, github_token, repo_fullname, pr_number)
                 
-                # Determine format based on file extension
-                fmt = 'json' if file_path.endswith('.json') else 'yaml'
+                # Save the content to a temporary file
+                with open(temp_path, 'w') as f:
+                    f.write(template_content)
                 
-                # Parse the template content
-                if fmt == 'json':
-                    template = json.loads(template_content)
+                # Sanitize the template using CLI
+                if sanitize_template_cli(temp_path, out_path):
+                    sanitized_list.append((str(out_path), file_path_obj.name))
+                    print(f"Successfully sanitized {file_path}")
                 else:
-                    import yaml
-                    template = yaml.safe_load(template_content)
-                
-                # Sanitize the template
-                sanitized, _ = sanitize_template(template)
-                
-                # Save the sanitized template
-                save_template(out_path, sanitized, fmt)
-                
-                sanitized_list.append((str(out_path), file_path_obj.name))
+                    print(f"Failed to sanitize {file_path}")
                 
             except Exception as e:
                 print(f"Error processing template {file_path}: {str(e)}")
@@ -267,16 +191,19 @@ def main():
     # Prepare payload with all sanitized templates
     payload = {"templates": []}
     for sanitized_file, original_name in sanitized_list:
-        with open(sanitized_file, 'rb') as f:
-            content = base64.b64encode(f.read()).decode('utf-8')
-        
-        payload["templates"].append({
-            "filename": original_name,
-            "content": content
-        })
+        try:
+            with open(sanitized_file, 'rb') as f:
+                content = base64.b64encode(f.read()).decode('utf-8')
+            
+            payload["templates"].append({
+                "filename": original_name,
+                "content": content
+            })
+        except Exception as e:
+            print(f"Error reading sanitized file {sanitized_file}: {str(e)}")
     
     # Send to cost server
-    cost_endpoint = "https://6de6-2403-a080-832-eef8-d0a3-45db-a731-bbc0.ngrok-free.app/evaluate"
+    cost_endpoint = "https://your-cost-api.example.com/evaluate"
     print(f"Sending sanitized templates to {cost_endpoint}")
     
     headers = {"Content-Type": "application/json"}
@@ -326,6 +253,7 @@ def main():
             main_comment += f"| [{template_name}](#{template_name.replace('.', '')}) | ${current_cost:.2f} | ${template_future_cost:.2f} | {status} |\n"
             
             # Create detailed comment for this template
+            from create_cost_comment import create_cost_comment
             template_comment = create_cost_comment(template_name, template_output)
             template_comment = f"<a name='{template_name.replace('.', '')}'></a>\n\n{template_comment}\n\n---\n\n"
             detailed_comments.append(template_comment)
