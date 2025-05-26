@@ -57,11 +57,29 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
     # Start building the comment with header
     comment = f"### 💰 CloudFormation Cost Estimation: `{template_name}`\n\n"
     
-    # Add the total infrastructure cost
-    comment += f"**Total Monthly Cost: ${total_cost:.2f}"
+    # Add a visually striking total infrastructure cost section
+    comment += "<div align=\"center\">\n\n"
+    comment += "## 💲 TOTAL MONTHLY COST 💲\n\n"
+    
+    # Create a visual box/card effect
+    comment += "```diff\n"
+    comment += f"+ ${total_cost:.2f}\n"
     if future_cost > 0:
-        comment += f" (Future: ${future_cost:.2f})"
-    comment += "**\n\n"
+        comment += f"! Future Cost: ${future_cost:.2f}\n"
+    comment += "```\n\n"
+    
+    # Add cost trend indicator
+    if future_cost > 0 and future_cost < total_cost:
+        savings = total_cost - future_cost
+        savings_percent = (savings / total_cost) * 100
+        comment += f"📉 **Future savings: ${savings:.2f} ({savings_percent:.1f}%)** 📉\n\n"
+    elif future_cost > total_cost:
+        increase = future_cost - total_cost
+        increase_percent = (increase / total_cost) * 100
+        comment += f"📈 **Future increase: ${increase:.2f} ({increase_percent:.1f}%)** 📈\n\n"
+    
+    comment += "</div>\n\n"
+    comment += "---\n\n"
     
     # Add a summary section with service costs
     comment += "## Service Cost Summary\n\n"
