@@ -9,6 +9,10 @@ import tempfile
 from typing import Dict, List
 from pathlib import Path
 
+# Direct imports with proper handling
+from cfn_flip import load_yaml, load_json, dump_yaml, dump_json
+from cfn_sanitizer.sanitizer import sanitize_template
+
 
 def run_command(cmd, check=True):
     """Run a shell command and return the output"""
@@ -19,11 +23,27 @@ def run_command(cmd, check=True):
     return result.stdout.strip()
 
 
-def sanitize_template_cli(input_path, output_path):
-    """Sanitize a CloudFormation template using the cfn-sanitizer CLI"""
+def sanitize_template_direct(content, output_path, fmt='yaml'):
+    """Sanitize a CloudFormation template directly using the module"""
     try:
-        cmd = f"cfn-sanitizer -i {input_path} -o {output_path}"
-        result = run_command(cmd)
+        print(f"Sanitizing template and saving to {output_path}")
+        
+        # Parse template based on format
+        if fmt == 'json':
+            template = load_json(content)
+        else:
+            template = load_yaml(content)
+        
+        # Sanitize the template
+        sanitized, _ = sanitize_template(template)
+        
+        # Write to output file
+        with open(output_path, 'w') as f:
+            if fmt == 'json':
+                f.write(dump_json(sanitized))
+            else:
+                f.write(dump_yaml(sanitized))
+        
         return True
     except Exception as e:
         print(f"Error sanitizing template: {str(e)}")
@@ -146,31 +166,25 @@ def main():
     sanitized_dir = Path("./sanitized_templates")
     sanitized_dir.mkdir(exist_ok=True)
     
-    # Create temp directory for original templates
-    temp_dir = Path("./temp_templates")
-    temp_dir.mkdir(exist_ok=True)
-    
     # Sanitize each changed template
     sanitized_list = []
     for file_path in changed_files:
         try:
             file_path_obj = Path(file_path)
             base_name = file_path_obj.name
-            temp_path = temp_dir / base_name
             out_path = sanitized_dir / base_name
             
             print(f"Processing {file_path}...")
             
-            # Get file content and save to temp file
+            # Get file content
             try:
                 template_content = get_file_content(file_path, github_token, repo_fullname, pr_number)
                 
-                # Save the content to a temporary file
-                with open(temp_path, 'w') as f:
-                    f.write(template_content)
+                # Determine format based on file extension
+                fmt = 'json' if file_path.endswith('.json') else 'yaml'
                 
-                # Sanitize the template using CLI
-                if sanitize_template_cli(temp_path, out_path):
+                # Sanitize the template directly
+                if sanitize_template_direct(template_content, out_path, fmt):
                     sanitized_list.append((str(out_path), file_path_obj.name))
                     print(f"Successfully sanitized {file_path}")
                 else:

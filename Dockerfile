@@ -3,8 +3,8 @@ FROM python:3.13-alpine
 # Install dependencies
 RUN apk add --no-cache bash curl jq git
 
-# Install Python packages
-RUN pip install requests pyyaml
+# Install Python packages with proper YAML handling for CloudFormation
+RUN pip install requests pyyaml cfn-flip
 
 # Copy everything including your local Python module
 COPY . /app
