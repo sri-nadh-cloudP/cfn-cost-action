@@ -57,18 +57,16 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
     # Start building the comment with header
     comment = f"### 💰 CloudFormation Cost Estimation: `{template_name}`\n\n"
     
-    # Add a simplified but prominent total cost section
-    comment += "<div align=\"center\">\n\n"
-    comment += "## Total Infrastructure Cost\n\n"
+    # Add a prominent total cost section (left-aligned)
+    comment += "# Total Infrastructure Cost\n\n"
     
-    # Make total monthly cost big and clear
+    # Make total monthly cost clear but smaller than the main heading
     comment += f"### Total Monthly Cost: ${total_cost:.2f}\n\n"
     
     # Add future cost if available
     if future_cost > 0:
         comment += f"### Future Monthly Cost: ${future_cost:.2f}\n\n"
     
-    comment += "</div>\n\n"
     comment += "---\n\n"
     
     # Add a summary section with service costs
