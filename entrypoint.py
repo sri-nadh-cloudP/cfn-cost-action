@@ -14,17 +14,44 @@ from cfn_sanitizer.utils import save_template
 
 def run_command(cmd, check=True):
     """Run a shell command and return the output"""
+    print(f"Running: {cmd}")
     result = subprocess.run(cmd, capture_output=True, text=True, check=check, shell=True)
+    if result.stderr and not check:
+        print(f"Command stderr: {result.stderr}")
     return result.stdout.strip()
 
 
-def get_changed_files(base_branch):
-    """Get the list of changed CloudFormation files"""
+def get_changed_files(base_branch, pr_number, github_token, repo_fullname):
+    """Get the list of changed CloudFormation files using the GitHub API"""
     try:
-        changed_files = run_command(f"git diff --name-only origin/{base_branch}...HEAD | grep -E '\\.ya?ml$|\\.json$'", check=False)
-        return changed_files.splitlines() if changed_files else []
-    except subprocess.CalledProcessError:
-        # grep returns exit code 1 if no files match
+        # First try using git command if we have a full clone
+        print("Trying to get changed files using git...")
+        try:
+            changed_files = run_command(f"git diff --name-only origin/{base_branch}...HEAD | grep -E '\\.ya?ml$|\\.json$'", check=False)
+            if changed_files:
+                return changed_files.splitlines()
+        except Exception as e:
+            print(f"Git diff failed: {str(e)}")
+        
+        # Fallback to GitHub API
+        print("Falling back to GitHub API to get changed files...")
+        api_url = f"https://api.github.com/repos/{repo_fullname}/pulls/{pr_number}/files"
+        headers = {"Authorization": f"token {github_token}"}
+        
+        response = requests.get(api_url, headers=headers)
+        response.raise_for_status()
+        
+        files_data = response.json()
+        changed_files = []
+        
+        for file_data in files_data:
+            filename = file_data.get("filename", "")
+            if filename.endswith(('.yaml', '.yml', '.json')):
+                changed_files.append(filename)
+        
+        return changed_files
+    except Exception as e:
+        print(f"Error getting changed files: {str(e)}")
         return []
 
 
@@ -113,6 +140,34 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
     return comment
 
 
+def get_file_content(filename, github_token, repo_fullname, pr_number):
+    """Get file content either from local filesystem or using GitHub API"""
+    try:
+        # First try to read locally
+        if Path(filename).exists():
+            print(f"Reading {filename} from local filesystem")
+            with open(filename, 'r') as f:
+                return f.read()
+        
+        # If not found, try GitHub API
+        print(f"Fetching {filename} using GitHub API")
+        api_url = f"https://api.github.com/repos/{repo_fullname}/contents/{filename}"
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3.raw"
+        }
+        
+        params = {"ref": f"refs/pull/{pr_number}/head"}
+        response = requests.get(api_url, headers=headers, params=params)
+        response.raise_for_status()
+        
+        return response.text
+    
+    except Exception as e:
+        print(f"Error reading file {filename}: {str(e)}")
+        raise
+
+
 def main():
     # Get inputs from environment variables (set by GitHub Actions)
     github_token = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("INPUT_GITHUB-TOKEN")
@@ -134,41 +189,80 @@ def main():
         print("ERROR: Could not determine PR number or base branch")
         sys.exit(1)
     
-    print(f"Fetching base branch: {base_branch}")
-    run_command(f"git fetch origin {base_branch}")
+    print(f"Processing PR #{pr_number} with base branch: {base_branch}")
     
+    try:
+        print(f"Setting up git authentication...")
+        # Configure Git to use the token for authentication
+        run_command(f"git config --global credential.helper 'store --file=/tmp/git-credentials'")
+        with open('/tmp/git-credentials', 'w') as f:
+            f.write(f"https://x-access-token:{github_token}@github.com\n")
+        
+        # Try to fetch, but don't fail if it doesn't work
+        print(f"Fetching base branch: {base_branch}")
+        try:
+            run_command(f"git fetch origin {base_branch}", check=False)
+        except Exception as e:
+            print(f"Warning: Could not fetch base branch: {str(e)}")
+    except Exception as e:
+        print(f"Warning: Git setup failed: {str(e)}")
     
     # Get list of changed CloudFormation files
-    changed_files = get_changed_files(base_branch)
+    changed_files = get_changed_files(base_branch, pr_number, github_token, repo_fullname)
     if not changed_files:
         print("No CloudFormation templates changed. Exiting.")
         sys.exit(0)
     
+    print(f"Found {len(changed_files)} changed template(s): {', '.join(changed_files)}")
     
     # Create temp directory for sanitized outputs
     sanitized_dir = Path("./sanitized_templates")
     sanitized_dir.mkdir(exist_ok=True)
     
-    
     # Sanitize each changed template
     sanitized_list = []
     for file_path in changed_files:
-        file_path = Path(file_path)
-        base_name = file_path.name
-        out_path = sanitized_dir / base_name
+        try:
+            file_path_obj = Path(file_path)
+            base_name = file_path_obj.name
+            out_path = sanitized_dir / base_name
+            
+            print(f"Processing {file_path}...")
+            
+            # Get file content
+            try:
+                # Try to get file content via GitHub API if local access fails
+                template_content = get_file_content(file_path, github_token, repo_fullname, pr_number)
+                
+                # Determine format based on file extension
+                fmt = 'json' if file_path.endswith('.json') else 'yaml'
+                
+                # Parse the template content
+                if fmt == 'json':
+                    template = json.loads(template_content)
+                else:
+                    import yaml
+                    template = yaml.safe_load(template_content)
+                
+                # Sanitize the template
+                sanitized, _ = sanitize_template(template)
+                
+                # Save the sanitized template
+                save_template(out_path, sanitized, fmt)
+                
+                sanitized_list.append((str(out_path), file_path_obj.name))
+                
+            except Exception as e:
+                print(f"Error processing template {file_path}: {str(e)}")
+                continue
         
-        print(f"Sanitizing {file_path}...")
-        
-        # Load the template
-        template, fmt = load_template(file_path)
-        
-        # Sanitize the template
-        sanitized, _ = sanitize_template(template)
-        
-        # Save the sanitized template
-        save_template(out_path, sanitized, fmt)
-        
-        sanitized_list.append((str(out_path), file_path.name))
+        except Exception as e:
+            print(f"Error processing file {file_path}: {str(e)}")
+            continue
+    
+    if not sanitized_list:
+        print("No templates were successfully sanitized. Exiting.")
+        sys.exit(0)
     
     # Prepare payload with all sanitized templates
     payload = {"templates": []}
