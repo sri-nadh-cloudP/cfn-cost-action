@@ -7,13 +7,6 @@ class OutputState(TypedDict):
     Final_Infra_Cost: str
     Validation_Output: str
 
-def extract_total_cost(service_cost: str) -> str:
-    """Extract the total monthly cost from a service cost string"""
-    match = re.search(r'Total Monthly Cost:\s*([\d.]+)', service_cost)
-    if match:
-        return match.group(1)
-    return "N/A"
-
 def calculate_total_infrastructure_cost(cost_data: OutputState) -> tuple:
     """Calculate the total infrastructure cost from all services"""
     total_cost = 0.0
@@ -70,51 +63,52 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
         comment += f" (Future: ${future_cost:.2f})"
     comment += "**\n\n"
     
-    # Add a summary table of service costs
-    comment += "| AWS Service | Monthly Cost |\n|------------|-------------|\n"
+    # Add a summary section with service costs
+    comment += "## Service Cost Summary\n\n"
     
-    for service_name, service_cost in cost_data.get('Service_Cost_Collector', {}).items():
-        total_cost = extract_total_cost(service_cost)
-        formatted_service_name = service_name.replace('_', ' ')
-        comment += f"| {formatted_service_name} | ${total_cost} |\n"
-    
-    comment += "\n"
-    
-    # Add collapsible details for each service
-    for service_name, detailed_cost in cost_data.get('Cost_Results', {}).items():
+    # Process each service from Service_Cost_Collector
+    for service_name, service_cost_info in cost_data.get('Service_Cost_Collector', {}).items():
         formatted_service_name = service_name.replace('_', ' ')
         
-        comment += f"<details>\n<summary><b>{formatted_service_name} Cost Details</b></summary>\n\n"
+        # Create a section for this service with its full cost info
+        comment += f"<details>\n<summary><b>{formatted_service_name}</b></summary>\n\n"
         
-        # Extract individual resource costs and create nested collapsible sections
-        resource_sections = re.split(r'\nIndividual Resource Costs:', detailed_cost)
+        # Display the full service cost info
+        comment += "```\n" + service_cost_info.strip() + "\n```\n\n"
         
-        # Process the first section (usually service overview)
-        if resource_sections and resource_sections[0].strip():
-            main_section = resource_sections[0].strip()
-            if "ResourceType:" in main_section:
-                # This is already a resource section
-                resource_type_match = re.search(r'ResourceType:\s*([^\n]+)', main_section)
+        # If we have detailed calculations in Cost_Results, add them in a nested dropdown
+        if service_name in cost_data.get('Cost_Results', {}):
+            detailed_cost = cost_data['Cost_Results'][service_name]
+            comment += "<details>\n<summary><b>Detailed Calculation Steps</b></summary>\n\n"
+            
+            # Extract individual resource costs and create nested dropdowns
+            resource_sections = re.split(r'\nIndividual Resource Costs:', detailed_cost)
+            
+            # Process the first section
+            if resource_sections and resource_sections[0].strip():
+                main_section = resource_sections[0].strip()
+                if "ResourceType:" in main_section:
+                    comment += f"```\n{main_section}\n```\n\n"
+            
+            # Process additional resource sections
+            for i, section in enumerate(resource_sections):
+                if i == 0:  # Skip the first section (already processed)
+                    continue
+                    
+                # Format this resource section
+                section = "Individual Resource Costs:" + section
+                
+                # Extract resource type
+                resource_type_match = re.search(r'ResourceType:\s*([^\n]+)', section)
                 if resource_type_match:
                     resource_type = resource_type_match.group(1).strip()
-                    comment += f"```\n{main_section}\n```\n\n"
-        
-        # Process additional resource sections as nested dropdowns
-        for i, section in enumerate(resource_sections):
-            if i == 0:  # Skip the first one as we already processed it
-                continue
-                
-            section = "Individual Resource Costs:" + section
+                    
+                    # Create nested dropdown for this resource
+                    comment += f"<details>\n<summary><b>{resource_type}</b></summary>\n\n"
+                    comment += f"```\n{section.strip()}\n```\n\n"
+                    comment += "</details>\n\n"
             
-            # Extract resource type
-            resource_type_match = re.search(r'ResourceType:\s*([^\n]+)', section)
-            if resource_type_match:
-                resource_type = resource_type_match.group(1).strip()
-                
-                # Create nested collapsible for individual resource
-                comment += f"<details>\n<summary><b>{resource_type}</b></summary>\n\n"
-                comment += f"```\n{section.strip()}\n```\n\n"
-                comment += "</details>\n\n"
+            comment += "</details>\n\n"
         
         comment += "</details>\n\n"
     
