@@ -70,13 +70,13 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
     for service_name, service_cost_info in cost_data.get('Service_Cost_Collector', {}).items():
         formatted_service_name = service_name.replace('_', ' ')
         
-        # Create a section for this service with its full cost info
-        comment += f"<details>\n<summary><b>{formatted_service_name}</b></summary>\n\n"
+        # Display service name as a header
+        comment += f"### {formatted_service_name}\n\n"
         
-        # Display the full service cost info
+        # Display the full service cost info in a markdown code block
         comment += "```\n" + service_cost_info.strip() + "\n```\n\n"
         
-        # If we have detailed calculations in Cost_Results, add them in a nested dropdown
+        # If we have detailed calculations in Cost_Results, add them in a dropdown
         if service_name in cost_data.get('Cost_Results', {}):
             detailed_cost = cost_data['Cost_Results'][service_name]
             comment += "<details>\n<summary><b>Detailed Calculation Steps</b></summary>\n\n"
@@ -109,7 +109,5 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
                     comment += "</details>\n\n"
             
             comment += "</details>\n\n"
-        
-        comment += "</details>\n\n"
     
     return comment 
