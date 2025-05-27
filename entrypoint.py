@@ -4,9 +4,6 @@ import json
 import base64
 import subprocess
 import requests
-import re
-import tempfile
-from typing import Dict, List
 from pathlib import Path
 
 # Direct imports with proper handling
@@ -84,6 +81,7 @@ def get_changed_files(base_branch, pr_number, github_token, repo_fullname):
         return []
 
 
+
 def get_file_content(filename, github_token, repo_fullname, pr_number):
     """Get file content either from local filesystem or using GitHub API"""
     try:
@@ -110,6 +108,7 @@ def get_file_content(filename, github_token, repo_fullname, pr_number):
     except Exception as e:
         print(f"Error reading file {filename}: {str(e)}")
         raise
+
 
 
 def main():

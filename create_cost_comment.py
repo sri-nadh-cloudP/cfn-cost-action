@@ -35,6 +35,7 @@ def calculate_total_infrastructure_cost(cost_data: OutputState) -> tuple:
     
     return total_cost, future_cost
 
+
 def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
     """Create a GitHub comment with collapsible sections for cost breakdown"""
     
