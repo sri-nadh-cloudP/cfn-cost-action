@@ -69,34 +69,40 @@ def create_tag_guardrails_comment(template_name: str, tag_guardrails: dict) -> s
         for resource_name, resource_info in resources.items():
             comment += f"### Resource: `{resource_name}`\n\n"
             
-            # Missing tags section
-            missing_tags = resource_info.get('missing_tags', [])
-            if missing_tags:
-                comment += "#### ❌ Missing Required Tags\n\n"
-                for tag in missing_tags:
-                    comment += f"- `{tag}`\n"
-                comment += "\n"
-            
-            # Incorrect tags section
-            incorrect_tags = resource_info.get('incorrect_tags', [])
-            if incorrect_tags:
-                comment += "#### ⚠️ Incorrect Tags\n\n"
-                
-                for i, tag_issue in enumerate(incorrect_tags, 1):
-                    comment += f"**Issue #{i}:**\n\n"
-                    comment += "| Field | Current | Suggested |\n"
-                    comment += "|-------|---------|----------|\n"
-                    comment += f"| Key | `{tag_issue.get('current_key', 'N/A')}` | `{tag_issue.get('suggested_key', 'N/A')}` |\n"
-                    comment += f"| Value | `{tag_issue.get('current_value', 'N/A')}` | `{tag_issue.get('suggested_value', 'N/A')}` |\n\n"
-                    
-                    issue_description = tag_issue.get('issue', 'No description provided')
-                    comment += f"**Issue:** {issue_description}\n\n"
-            
-            # Recommendations section
+            # Recommendations section (displayed directly)
             recommendations = resource_info.get('recommendations', '')
             if recommendations:
-                comment += "#### 💡 Recommendations\n\n"
-                comment += f"{recommendations}\n\n"
+                comment += "**Recommendations:** " + recommendations + "\n\n"
+            
+            # Check if there are any tag issues to show in dropdown
+            missing_tags = resource_info.get('missing_tags', [])
+            incorrect_tags = resource_info.get('incorrect_tags', [])
+            
+            if missing_tags or incorrect_tags:
+                comment += "<details>\n<summary><b>Detailed Tag Analysis</b></summary>\n\n"
+                
+                # Missing tags section
+                if missing_tags:
+                    comment += "#### ❌ Missing Required Tags\n\n"
+                    for tag in missing_tags:
+                        comment += f"- `{tag}`\n"
+                    comment += "\n"
+                
+                # Incorrect tags section
+                if incorrect_tags:
+                    comment += "#### ⚠️ Incorrect Tags\n\n"
+                    
+                    for i, tag_issue in enumerate(incorrect_tags, 1):
+                        comment += f"**Issue #{i}:**\n\n"
+                        comment += "| Field | Current | Suggested |\n"
+                        comment += "|-------|---------|----------|\n"
+                        comment += f"| Key | `{tag_issue.get('current_key', 'N/A')}` | `{tag_issue.get('suggested_key', 'N/A')}` |\n"
+                        comment += f"| Value | `{tag_issue.get('current_value', 'N/A')}` | `{tag_issue.get('suggested_value', 'N/A')}` |\n\n"
+                        
+                        issue_description = tag_issue.get('issue', 'No description provided')
+                        comment += f"**Issue:** {issue_description}\n\n"
+                
+                comment += "</details>\n\n"
             
             # Add separator between resources
             comment += "---\n\n"
