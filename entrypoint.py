@@ -224,7 +224,7 @@ def main():
             print(f"Error reading sanitized file {sanitized_file}: {str(e)}")
     
     # Send to cost server
-    cost_endpoint = "https://7685-2403-a080-832-eef8-210b-4d18-72b3-98ab.ngrok-free.app/evaluate"
+    cost_endpoint = "https://8f02525cff25.ngrok-free.app/evaluate"
     print(f"Sending sanitized templates to {cost_endpoint}")
     
     headers = {"Content-Type": "application/json"}
@@ -245,8 +245,8 @@ def main():
         try:
             template_output = template_data.get("output", {})
             
-            # Generate comment for this template using the helper function
-            from create_cost_comment import create_cost_comment
+            # Generate cost comment for this template using the helper function
+            from create_cost_comment import create_cost_comment, create_tag_guardrails_comment
             template_comment = create_cost_comment(template_name, template_output)
             
             # Post comment to the PR
@@ -277,9 +277,31 @@ def main():
                     print(f"Response content: {response.text[:500]}...")  # Print first 500 chars
                     
                 response.raise_for_status()
-                print(f"Comment for {template_name} posted successfully!")
+                print(f"Cost comment for {template_name} posted successfully!")
+                
+                # Also post Tag Guardrails comment if available
+                tag_guardrails = template_output.get('Tag_Guardrails', {})
+                if tag_guardrails:  # Only post if there are guardrails to show
+                    try:
+                        tag_comment = create_tag_guardrails_comment(template_name, tag_guardrails)
+                        print(f"Posting tag guardrails comment for template: {template_name}")
+                        
+                        tag_comment_payload = {"body": tag_comment}
+                        tag_response = requests.post(comment_url, headers=headers, json=tag_comment_payload)
+                        
+                        print(f"Tag guardrails response status code: {tag_response.status_code}")
+                        if tag_response.status_code != 201:
+                            print(f"Tag guardrails response content: {tag_response.text[:500]}...")
+                        
+                        tag_response.raise_for_status()
+                        print(f"Tag guardrails comment for {template_name} posted successfully!")
+                        
+                    except Exception as e:
+                        print(f"Error posting tag guardrails comment for {template_name}: {str(e)}")
+                        print("Continuing...")
+                
             except Exception as e:
-                print(f"Error posting comment for {template_name}: {str(e)}")
+                print(f"Error posting comments for {template_name}: {str(e)}")
                 print("Continuing with next template...")
             
         except Exception as e:

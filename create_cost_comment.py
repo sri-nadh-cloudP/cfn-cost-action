@@ -5,6 +5,7 @@ class OutputState(TypedDict):
     Cost_Results: Dict[str, str]
     Service_Cost_Collector: Dict[str, str]
     Final_Infra_Cost: str
+    Tag_Guardrails: dict
     Validation_Output: str
 
 def calculate_total_infrastructure_cost(cost_data: OutputState) -> tuple:
@@ -35,6 +36,72 @@ def calculate_total_infrastructure_cost(cost_data: OutputState) -> tuple:
     
     return total_cost, future_cost
 
+def create_tag_guardrails_comment(template_name: str, tag_guardrails: dict) -> str:
+    """Create a GitHub comment for Tag Guardrails information"""
+    
+    # Check if tag_guardrails is empty or None
+    if not tag_guardrails:
+        return f"### 🏷️ Tag Guardrails: `{template_name}`\n\n✅ **No tag issues found!** All resources follow the required tagging standards.\n\n"
+    
+    # Start building the comment
+    comment = f"### 🏷️ Tag Guardrails: `{template_name}`\n\n"
+    
+    total_issues = 0
+    total_resources = 0
+    
+    # Count total issues and resources
+    for service_name, resources in tag_guardrails.items():
+        for resource_name, resource_info in resources.items():
+            total_resources += 1
+            total_issues += len(resource_info.get('missing_tags', []))
+            total_issues += len(resource_info.get('incorrect_tags', []))
+    
+    # Add summary
+    comment += f"**Summary:** Found {total_issues} tag issues across {total_resources} resources\n\n"
+    comment += "---\n\n"
+    
+    # Process each service
+    for service_name, resources in tag_guardrails.items():
+        formatted_service_name = service_name.replace('_', ' ')
+        comment += f"## {formatted_service_name}\n\n"
+        
+        # Process each resource in this service
+        for resource_name, resource_info in resources.items():
+            comment += f"### Resource: `{resource_name}`\n\n"
+            
+            # Missing tags section
+            missing_tags = resource_info.get('missing_tags', [])
+            if missing_tags:
+                comment += "#### ❌ Missing Required Tags\n\n"
+                for tag in missing_tags:
+                    comment += f"- `{tag}`\n"
+                comment += "\n"
+            
+            # Incorrect tags section
+            incorrect_tags = resource_info.get('incorrect_tags', [])
+            if incorrect_tags:
+                comment += "#### ⚠️ Incorrect Tags\n\n"
+                
+                for i, tag_issue in enumerate(incorrect_tags, 1):
+                    comment += f"**Issue #{i}:**\n\n"
+                    comment += "| Field | Current | Suggested |\n"
+                    comment += "|-------|---------|----------|\n"
+                    comment += f"| Key | `{tag_issue.get('current_key', 'N/A')}` | `{tag_issue.get('suggested_key', 'N/A')}` |\n"
+                    comment += f"| Value | `{tag_issue.get('current_value', 'N/A')}` | `{tag_issue.get('suggested_value', 'N/A')}` |\n\n"
+                    
+                    issue_description = tag_issue.get('issue', 'No description provided')
+                    comment += f"**Issue:** {issue_description}\n\n"
+            
+            # Recommendations section
+            recommendations = resource_info.get('recommendations', '')
+            if recommendations:
+                comment += "#### 💡 Recommendations\n\n"
+                comment += f"{recommendations}\n\n"
+            
+            # Add separator between resources
+            comment += "---\n\n"
+    
+    return comment
 
 def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
     """Create a GitHub comment with collapsible sections for cost breakdown"""
