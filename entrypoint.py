@@ -47,20 +47,43 @@ def sanitize_template_direct(content, output_path, fmt='yaml'):
         return False
 
 
+def is_cloudformation_template(content):
+    """Check if the content is a CloudFormation template"""
+    try:
+        # Try parsing as YAML first
+        try:
+            template = load_yaml(content)
+        except:
+            # Try parsing as JSON
+            try:
+                template = load_json(content)
+            except:
+                return False
+        
+        # Check for CloudFormation-specific keys
+        if not isinstance(template, dict):
+            return False
+            
+        # A CloudFormation template must have either Resources or at least AWSTemplateFormatVersion
+        has_resources = 'Resources' in template
+        has_cfn_version = 'AWSTemplateFormatVersion' in template
+        
+        # Most CFN templates will have Resources, but some might only have Parameters/Outputs
+        # So we check for typical CFN keys
+        cfn_keys = {'Resources', 'AWSTemplateFormatVersion', 'Parameters', 'Outputs', 'Conditions', 'Mappings', 'Transform'}
+        has_cfn_keys = bool(cfn_keys.intersection(template.keys()))
+        
+        return has_resources or (has_cfn_version and has_cfn_keys)
+    except Exception as e:
+        print(f"Error checking if file is CFN template: {str(e)}")
+        return False
+
+
 def get_changed_files(base_branch, pr_number, github_token, repo_fullname):
     """Get the list of changed CloudFormation files using the GitHub API"""
     try:
-        # First try using git command if we have a full clone
-        print("Trying to get changed files using git...")
-        try:
-            changed_files = run_command(f"git diff --name-only origin/{base_branch}...HEAD | grep -E '\\.ya?ml$|\\.json$'", check=False)
-            if changed_files:
-                return changed_files.splitlines()
-        except Exception as e:
-            print(f"Git diff failed: {str(e)}")
-        
-        # Fallback to GitHub API
-        print("Falling back to GitHub API to get changed files...")
+        # Use GitHub API to get changed files (more reliable in PR context)
+        print("Getting changed files from GitHub API...")
         api_url = f"https://api.github.com/repos/{repo_fullname}/pulls/{pr_number}/files"
         headers = {"Authorization": f"token {github_token}"}
         
@@ -70,11 +93,24 @@ def get_changed_files(base_branch, pr_number, github_token, repo_fullname):
         files_data = response.json()
         changed_files = []
         
+        print(f"\nAnalyzing {len(files_data)} changed files from PR...")
         for file_data in files_data:
             filename = file_data.get("filename", "")
+            status = file_data.get("status", "")
+            
+            # Only process added or modified files (not deleted)
+            if status == "removed":
+                print(f"  ⏭️  Skipping deleted file: {filename}")
+                continue
+                
+            # Check if it has a potential CFN extension
             if filename.endswith(('.yaml', '.yml', '.json')):
+                print(f"  🔍 Found potential CFN file: {filename} (status: {status})")
                 changed_files.append(filename)
+            else:
+                print(f"  ⏭️  Skipping non-template file: {filename}")
         
+        print(f"\nTotal potential CFN templates to validate: {len(changed_files)}")
         return changed_files
     except Exception as e:
         print(f"Error getting changed files: {str(e)}")
@@ -164,46 +200,72 @@ def main():
     # Get list of changed CloudFormation files
     changed_files = get_changed_files(base_branch, pr_number, github_token, repo_fullname)
     if not changed_files:
-        print("No CloudFormation templates changed. Exiting.")
+        print("No potential CloudFormation templates changed. Exiting.")
         sys.exit(0)
-    
-    print(f"Found {len(changed_files)} changed template(s): {', '.join(changed_files)}")
     
     # Create temp directory for sanitized outputs
     sanitized_dir = Path("./sanitized_templates")
     sanitized_dir.mkdir(exist_ok=True)
     
-    # Sanitize each changed template
+    # Validate and sanitize each changed template
     sanitized_list = []
+    validated_cfn_files = []
+    
+    print(f"\n{'='*60}")
+    print("VALIDATING CLOUDFORMATION TEMPLATES")
+    print(f"{'='*60}\n")
+    
     for file_path in changed_files:
         try:
             file_path_obj = Path(file_path)
             base_name = file_path_obj.name
-            out_path = sanitized_dir / base_name
             
-            print(f"Processing {file_path}...")
+            print(f"📄 Checking: {file_path}")
             
             # Get file content
             try:
                 template_content = get_file_content(file_path, github_token, repo_fullname, pr_number)
                 
+                # Validate that this is actually a CloudFormation template
+                if not is_cloudformation_template(template_content):
+                    print(f"  ⚠️  NOT a CloudFormation template - skipping")
+                    print()
+                    continue
+                
+                print(f"  ✅ Confirmed as CloudFormation template")
+                validated_cfn_files.append(file_path)
+                
                 # Determine format based on file extension
                 fmt = 'json' if file_path.endswith('.json') else 'yaml'
                 
                 # Sanitize the template directly
+                out_path = sanitized_dir / base_name
                 if sanitize_template_direct(template_content, out_path, fmt):
                     sanitized_list.append((str(out_path), file_path_obj.name))
-                    print(f"Successfully sanitized {file_path}")
+                    print(f"  ✅ Successfully sanitized")
                 else:
-                    print(f"Failed to sanitize {file_path}")
+                    print(f"  ❌ Failed to sanitize")
+                print()
                 
             except Exception as e:
-                print(f"Error processing template {file_path}: {str(e)}")
+                print(f"  ❌ Error processing: {str(e)}")
+                print()
                 continue
         
         except Exception as e:
-            print(f"Error processing file {file_path}: {str(e)}")
+            print(f"❌ Error with file {file_path}: {str(e)}")
+            print()
             continue
+    
+    print(f"\n{'='*60}")
+    print(f"VALIDATION COMPLETE")
+    print(f"{'='*60}")
+    print(f"✅ Validated CFN templates: {len(validated_cfn_files)}")
+    if validated_cfn_files:
+        for f in validated_cfn_files:
+            print(f"   - {f}")
+    print(f"✅ Successfully sanitized: {len(sanitized_list)}")
+    print(f"{'='*60}\n")
     
     if not sanitized_list:
         print("No templates were successfully sanitized. Exiting.")
