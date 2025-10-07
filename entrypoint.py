@@ -79,21 +79,41 @@ def is_cloudformation_template(content):
         return False
 
 
-def get_changed_files(base_branch, pr_number, github_token, repo_fullname):
-    """Get the list of changed CloudFormation files using the GitHub API"""
+def get_changed_files(base_branch, pr_number, github_token, repo_fullname, event_action, before_sha, after_sha):
+    """Get the list of changed CloudFormation files based on the event type"""
     try:
-        # Use GitHub API to get changed files (more reliable in PR context)
-        print("Getting changed files from GitHub API...")
-        api_url = f"https://api.github.com/repos/{repo_fullname}/pulls/{pr_number}/files"
-        headers = {"Authorization": f"token {github_token}"}
-        
-        response = requests.get(api_url, headers=headers)
-        response.raise_for_status()
-        
-        files_data = response.json()
         changed_files = []
         
-        print(f"\nAnalyzing {len(files_data)} changed files from PR...")
+        # For 'synchronize' event, only get files changed in the latest commit
+        if event_action == 'synchronize' and before_sha and after_sha:
+            print(f"Event: synchronize - Getting files changed between {before_sha[:7]}...{after_sha[:7]}")
+            
+            # Use GitHub API to compare commits
+            api_url = f"https://api.github.com/repos/{repo_fullname}/compare/{before_sha}...{after_sha}"
+            headers = {"Authorization": f"token {github_token}"}
+            
+            response = requests.get(api_url, headers=headers)
+            response.raise_for_status()
+            
+            compare_data = response.json()
+            files_data = compare_data.get('files', [])
+            
+            print(f"\nAnalyzing {len(files_data)} changed files in latest commit...")
+            
+        else:
+            # For 'opened' or other events, get all files changed in the PR
+            print(f"Event: {event_action} - Getting all files changed in PR #{pr_number}")
+            api_url = f"https://api.github.com/repos/{repo_fullname}/pulls/{pr_number}/files"
+            headers = {"Authorization": f"token {github_token}"}
+            
+            response = requests.get(api_url, headers=headers)
+            response.raise_for_status()
+            
+            files_data = response.json()
+            
+            print(f"\nAnalyzing {len(files_data)} changed files in PR...")
+        
+        # Process files
         for file_data in files_data:
             filename = file_data.get("filename", "")
             status = file_data.get("status", "")
@@ -171,12 +191,19 @@ def main():
     
     pr_number = event_data.get('pull_request', {}).get('number')
     base_branch = event_data.get('pull_request', {}).get('base', {}).get('ref')
+    event_action = event_data.get('action', 'opened')  # opened, synchronize, closed, etc.
+    
+    # For synchronize events, get the before and after commit SHAs
+    before_sha = event_data.get('before', '')
+    after_sha = event_data.get('after', '')
     
     if not pr_number or not base_branch:
         print("ERROR: Could not determine PR number or base branch")
         sys.exit(1)
     
-    print(f"Processing PR #{pr_number} with base branch: {base_branch}")
+    print(f"Processing PR #{pr_number} (action: {event_action}) with base branch: {base_branch}")
+    if event_action == 'synchronize':
+        print(f"Synchronize event: comparing {before_sha[:7] if before_sha else 'N/A'}...{after_sha[:7] if after_sha else 'N/A'}")
     
     try:
         print(f"Setting up git authentication...")
@@ -198,7 +225,7 @@ def main():
         print(f"Warning: Git setup failed: {str(e)}")
     
     # Get list of changed CloudFormation files
-    changed_files = get_changed_files(base_branch, pr_number, github_token, repo_fullname)
+    changed_files = get_changed_files(base_branch, pr_number, github_token, repo_fullname, event_action, before_sha, after_sha)
     if not changed_files:
         print("No potential CloudFormation templates changed. Exiting.")
         sys.exit(0)
