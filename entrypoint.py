@@ -313,7 +313,7 @@ def main():
             print(f"Error reading sanitized file {sanitized_file}: {str(e)}")
     
     # Send to cost server
-    cost_endpoint = "http://34.122.171.14:8000/evaluate"
+    cost_endpoint = "http://34.66.30.124:8000/evaluate"
     print(f"Sending sanitized templates to {cost_endpoint}")
     
     headers = {"Content-Type": "application/json"}
