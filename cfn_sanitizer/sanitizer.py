@@ -194,6 +194,11 @@ class CloudFormationSanitizer:
         Returns:
             Sanitized property value
         """
+        # Skip sanitization for Tag properties completely
+        # This handles Tags, TagSpecifications, and any nested tag structures
+        if 'Tags' in path or 'TagSpecifications' in path or '.Tag.' in path:
+            return value
+            
         # Handle different value types
         if isinstance(value, str):
             # Skip sanitizing simple names or identifiers in tags
