@@ -43,24 +43,46 @@ def create_tag_guardrails_comment(template_name: str, tag_guardrails: dict) -> s
     if not tag_guardrails:
         return f"## Tag Guardrails Summary : `{template_name}`\n\n✅ **No tag issues found!** All resources follow the required tagging standards.\n\n"
     
+    # Helper function to check if recommendation is positive (no action required)
+    def is_positive_recommendation(recommendations: str) -> bool:
+        if not recommendations:
+            return False
+        recommendations_lower = recommendations.lower()
+        return 'no action' in recommendations_lower or 'no actions' in recommendations_lower
+    
     # Start building the comment
     comment = f"## Tag Guardrails Summary : `{template_name}`\n\n"
     
     total_issues = 0
     total_resources = 0
-    affected_services = []
+    affected_services_set = set()
     
-    # Count total issues, resources, and collect affected services
+    # Count total issues, resources, and collect affected services (excluding positive recommendations)
     for service_name, resources in tag_guardrails.items():
-        affected_services.append(service_name.replace('_', ' '))
+        service_has_violations = False
         for resource_name, resource_info in resources.items():
+            recommendations = resource_info.get('recommendations', '')
+            
+            # Skip resources with positive recommendations (no action required)
+            if is_positive_recommendation(recommendations):
+                continue
+            
+            # Count this resource as it has actual violations
             total_resources += 1
+            service_has_violations = True
             total_issues += len(resource_info.get('missing_tags', []))
             total_issues += len(resource_info.get('incorrect_tags', []))
+        
+        # Only add service if it has at least one resource with violations
+        if service_has_violations:
+            affected_services_set.add(service_name.replace('_', ' '))
+    
+    # Convert set to sorted list for consistent display
+    affected_services = sorted(list(affected_services_set))
     
     # Add new summary format
     comment += f"#### Tag Violations Found: {total_issues}\n"
-    comment += f"#### Services Affected: {', '.join(affected_services)}\n"
+    comment += f"#### Services Affected: {', '.join(affected_services) if affected_services else 'None'}\n"
     comment += f"#### Resources Affected: {total_resources}\n"
     comment += "---\n\n"
     
@@ -70,10 +92,23 @@ def create_tag_guardrails_comment(template_name: str, tag_guardrails: dict) -> s
     # Process each service
     for service_name, resources in tag_guardrails.items():
         formatted_service_name = service_name.replace('_', ' ')
+        
+        # Collect resources with actual violations for this service
+        resources_with_violations = []
+        for resource_name, resource_info in resources.items():
+            recommendations = resource_info.get('recommendations', '')
+            # Skip resources with positive recommendations
+            if not is_positive_recommendation(recommendations):
+                resources_with_violations.append((resource_name, resource_info))
+        
+        # Only display service section if it has resources with violations
+        if not resources_with_violations:
+            continue
+        
         comment += f"### {formatted_service_name}\n\n"
         
-        # Process each resource in this service
-        for resource_name, resource_info in resources.items():
+        # Process each resource with violations in this service
+        for resource_name, resource_info in resources_with_violations:
             comment += f"#### Resource: `{resource_name}`\n\n"
             
             # Recommendations section (displayed directly)
@@ -219,7 +254,7 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
     service_counter = 1
     for service_data in services_data:
         comment += f"<details id=\"service-{service_counter}\">\n"
-        comment += f"<summary><b>Service {service_counter}: {service_data['name']} - <span style=\"color: #0969da;\">Show Details</span></b></summary>\n\n"
+        comment += f"<summary><b>Service {service_counter}: {service_data['name']} - </b><code>📊 Show Details</code></summary>\n\n"
         
         # Add detailed calculations if available
         if service_data['detailed']:
