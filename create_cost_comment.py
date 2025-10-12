@@ -41,10 +41,10 @@ def create_tag_guardrails_comment(template_name: str, tag_guardrails: dict) -> s
     
     # Check if tag_guardrails is empty or None
     if not tag_guardrails:
-        return f"# Tag Guardrails Summary: `{template_name}`\n\n✅ **No tag issues found!** All resources follow the required tagging standards.\n\n"
+        return f"## Tag Guardrails Summary: `{template_name}`\n\n✅ **No tag issues found!** All resources follow the required tagging standards.\n\n"
     
     # Start building the comment
-    comment = f"# Tag Guardrails Summary: `{template_name}`\n\n"
+    comment = f"## Tag Guardrails Summary: `{template_name}`\n\n"
     
     total_issues = 0
     total_resources = 0
@@ -59,9 +59,9 @@ def create_tag_guardrails_comment(template_name: str, tag_guardrails: dict) -> s
             total_issues += len(resource_info.get('incorrect_tags', []))
     
     # Add new summary format
-    comment += f"## Tag Violations Found: {total_issues}\n\n"
-    comment += f"## Services Affected: {', '.join(affected_services)}\n\n"
-    comment += f"## Resources Affected: {total_resources}\n\n"
+    comment += f"#### Tag Violations Found: {total_issues}\n\n"
+    comment += f"#### Services Affected: {', '.join(affected_services)}\n\n"
+    comment += f"#### Resources Affected: {total_resources}\n\n"
     comment += "---\n\n"
     
     # Add new heading for service breakdown
@@ -146,49 +146,89 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
             services_list.append(formatted_name)
     
     # Start building the comment with header
-    comment = f"# Cost Summary of: `{template_name}`\n\n"
+    comment = f"## Cost Summary of: `{template_name}`\n\n"
     
     # Add projected monthly cost and metadata
-    comment += f"## Projected Monthly Cost: ${total_cost:.2f}\n\n"
-    comment += f"## IAC Language: CloudFormation\n\n"
-    comment += f"## Services Included: {', '.join(services_list)}\n\n"
-    comment += f"## Cloud Provider: AWS\n\n"
+    comment += f"### Projected Monthly Cost: ${total_cost:.2f}\n\n"
+    comment += f"### IAC Language: CloudFormation\n\n"
+    comment += f"### Services Included: {', '.join(services_list)}\n\n"
+    comment += f"### Cloud Provider: AWS\n\n"
     
     comment += "---\n\n"
     
     # Add a summary section with service costs
     comment += "### Cost Summary by Service\n\n"
     
+    # Create table header
+    comment += "| # | Service Name | Projected Monthly Cost | Action |\n"
+    comment += "|---|--------------|------------------------|--------|\n"
+    
     # Track which Cost_Results entries we've already displayed
     displayed_cost_results = set()
+    service_counter = 1
+    
+    # Collect all services data first
+    services_data = []
     
     # Process each service from Service_Cost_Collector
     for service_name, service_cost_info in cost_data.get('Service_Cost_Collector', {}).items():
         formatted_service_name = service_name.replace('_', ' ')
         
-        # Display service name as a header
-        comment += f"#### {formatted_service_name}\n\n"
+        # Extract the monthly cost from service_cost_info
+        cost_match = re.search(r'Total Monthly Cost:\s*\$?([\d,]+\.?\d*)', service_cost_info)
+        monthly_cost = cost_match.group(1) if cost_match else "N/A"
         
-        # Display the full service cost info in a markdown code block
-        comment += "```\n" + service_cost_info.strip() + "\n```\n\n"
-        
-        # If we have detailed calculations in Cost_Results, add them in a dropdown
-        if service_name in cost_data.get('Cost_Results', {}):
-            detailed_cost = cost_data['Cost_Results'][service_name]
+        # Get detailed calculations if available
+        detailed_cost = cost_data.get('Cost_Results', {}).get(service_name, None)
+        if detailed_cost:
             displayed_cost_results.add(service_name)
+        
+        services_data.append({
+            'name': formatted_service_name,
+            'cost': monthly_cost,
+            'summary': service_cost_info,
+            'detailed': detailed_cost
+        })
+    
+    # Process any Cost_Results entries that weren't in Service_Cost_Collector
+    for service_name, detailed_cost in cost_data.get('Cost_Results', {}).items():
+        if service_name not in displayed_cost_results:
+            formatted_service_name = service_name.replace('_', ' ')
             
-            comment += "<details>\n<summary><b>Detailed Calculation Steps</b></summary>\n\n"
+            # Try to extract cost from detailed_cost
+            summary_match = re.search(r'TOTAL MONTHLY COST:\s*\$?([\d,]+\.?\d*)', detailed_cost, re.IGNORECASE)
+            monthly_cost = summary_match.group(1) if summary_match else "N/A"
+            
+            services_data.append({
+                'name': formatted_service_name,
+                'cost': monthly_cost,
+                'summary': None,  # No summary from Service_Cost_Collector
+                'detailed': detailed_cost
+            })
+    
+    # Build table rows
+    for service_data in services_data:
+        # Create the expandable details section
+        details_content = ""
+        
+        # Add service summary if available
+        if service_data['summary']:
+            details_content += f"**Service Cost Summary:**\\n\\n```\\n{service_data['summary'].strip()}\\n```\\n\\n"
+        
+        # Add detailed calculations if available
+        if service_data['detailed']:
+            details_content += "**Detailed Calculation Steps:**\\n\\n"
             
             # Check if the detailed cost has the "Individual Resource Costs:" pattern
-            if '\nIndividual Resource Costs:' in detailed_cost:
+            if '\nIndividual Resource Costs:' in service_data['detailed']:
                 # Extract individual resource costs and create nested dropdowns
-                resource_sections = re.split(r'\nIndividual Resource Costs:', detailed_cost)
+                resource_sections = re.split(r'\nIndividual Resource Costs:', service_data['detailed'])
                 
                 # Process the first section
                 if resource_sections and resource_sections[0].strip():
                     main_section = resource_sections[0].strip()
                     if "ResourceType:" in main_section:
-                        comment += f"```\n{main_section}\n```\n\n"
+                        details_content += f"```\\n{main_section}\\n```\\n\\n"
                 
                 # Process additional resource sections
                 for i, section in enumerate(resource_sections):
@@ -202,36 +242,17 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
                     resource_type_match = re.search(r'ResourceType:\s*([^\n]+)', section)
                     if resource_type_match:
                         resource_type = resource_type_match.group(1).strip()
-                        
-                        # Create nested dropdown for this resource
-                        comment += f"<details>\n<summary><b>{resource_type}</b></summary>\n\n"
-                        comment += f"```\n{section.strip()}\n```\n\n"
-                        comment += "</details>\n\n"
+                        details_content += f"**{resource_type}:**\\n\\n```\\n{section.strip()}\\n```\\n\\n"
             else:
                 # No "Individual Resource Costs:" pattern - display the entire detailed cost as-is
-                comment += f"```\n{detailed_cost.strip()}\n```\n\n"
-            
-            comment += "</details>\n\n"
+                details_content += f"```\\n{service_data['detailed'].strip()}\\n```\\n\\n"
+        
+        # Add table row with expandable details in Action column
+        action_html = f'<details><summary>Show Details</summary><br>{details_content}</details>'
+        
+        comment += f"| {service_counter} | {service_data['name']} | ${service_data['cost']} | {action_html} |\n"
+        service_counter += 1
     
-    # Now process any Cost_Results entries that weren't displayed yet
-    # These are services that exist in Cost_Results but not in Service_Cost_Collector
-    for service_name, detailed_cost in cost_data.get('Cost_Results', {}).items():
-        if service_name not in displayed_cost_results:
-            formatted_service_name = service_name.replace('_', ' ')
-            
-            # Display service name as a header
-            comment += f"#### {formatted_service_name}\n\n"
-            
-            # Try to extract a summary from the detailed cost for the main section
-            # Look for patterns like "TOTAL MONTHLY COST: $X.XX"
-            summary_match = re.search(r'TOTAL MONTHLY COST:\s*\$?([\d,]+\.?\d*)', detailed_cost, re.IGNORECASE)
-            if summary_match:
-                total_cost = summary_match.group(1)
-                comment += f"**Total Monthly Cost:** ${total_cost}\n\n"
-            
-            # Add the detailed calculation steps in a dropdown
-            comment += "<details>\n<summary><b>Detailed Calculation Steps</b></summary>\n\n"
-            comment += f"```\n{detailed_cost.strip()}\n```\n\n"
-            comment += "</details>\n\n"
+    comment += "\n"
     
     return comment 
