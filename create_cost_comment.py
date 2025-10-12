@@ -187,7 +187,8 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
             'name': formatted_service_name,
             'cost': monthly_cost,
             'summary': service_cost_info,
-            'detailed': detailed_cost
+            'detailed': detailed_cost,
+            'service_key': service_name
         })
     
     # Process any Cost_Results entries that weren't in Service_Cost_Collector
@@ -203,21 +204,31 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
                 'name': formatted_service_name,
                 'cost': monthly_cost,
                 'summary': None,  # No summary from Service_Cost_Collector
-                'detailed': detailed_cost
+                'detailed': detailed_cost,
+                'service_key': service_name
             })
     
-    # Build table rows
+    # Build table rows (simple table without complex HTML in cells)
     for service_data in services_data:
-        # Create the expandable details section
-        details_content = ""
+        comment += f"| {service_counter} | {service_data['name']} | ${service_data['cost']} | [Show Details](#service-{service_counter}) |\n"
+        service_counter += 1
+    
+    comment += "\n"
+    
+    # Now add the detailed sections below the table
+    service_counter = 1
+    for service_data in services_data:
+        comment += f"<details id=\"service-{service_counter}\">\n"
+        comment += f"<summary><b>Service {service_counter}: {service_data['name']} - Show Details</b></summary>\n\n"
         
         # Add service summary if available
         if service_data['summary']:
-            details_content += f"**Service Cost Summary:**\\n\\n```\\n{service_data['summary'].strip()}\\n```\\n\\n"
+            comment += "**Service Cost Summary:**\n\n"
+            comment += "```\n" + service_data['summary'].strip() + "\n```\n\n"
         
         # Add detailed calculations if available
         if service_data['detailed']:
-            details_content += "**Detailed Calculation Steps:**\\n\\n"
+            comment += "**Detailed Calculation Steps:**\n\n"
             
             # Check if the detailed cost has the "Individual Resource Costs:" pattern
             if '\nIndividual Resource Costs:' in service_data['detailed']:
@@ -228,7 +239,7 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
                 if resource_sections and resource_sections[0].strip():
                     main_section = resource_sections[0].strip()
                     if "ResourceType:" in main_section:
-                        details_content += f"```\\n{main_section}\\n```\\n\\n"
+                        comment += f"```\n{main_section}\n```\n\n"
                 
                 # Process additional resource sections
                 for i, section in enumerate(resource_sections):
@@ -242,17 +253,16 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
                     resource_type_match = re.search(r'ResourceType:\s*([^\n]+)', section)
                     if resource_type_match:
                         resource_type = resource_type_match.group(1).strip()
-                        details_content += f"**{resource_type}:**\\n\\n```\\n{section.strip()}\\n```\\n\\n"
+                        
+                        # Create nested dropdown for this resource
+                        comment += f"<details>\n<summary><b>{resource_type}</b></summary>\n\n"
+                        comment += f"```\n{section.strip()}\n```\n\n"
+                        comment += "</details>\n\n"
             else:
                 # No "Individual Resource Costs:" pattern - display the entire detailed cost as-is
-                details_content += f"```\\n{service_data['detailed'].strip()}\\n```\\n\\n"
+                comment += f"```\n{service_data['detailed'].strip()}\n```\n\n"
         
-        # Add table row with expandable details in Action column
-        action_html = f'<details><summary>Show Details</summary><br>{details_content}</details>'
-        
-        comment += f"| {service_counter} | {service_data['name']} | ${service_data['cost']} | {action_html} |\n"
+        comment += "</details>\n\n"
         service_counter += 1
-    
-    comment += "\n"
     
     return comment 
