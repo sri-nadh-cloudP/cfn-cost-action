@@ -160,8 +160,8 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
     comment += "### Cost Summary by Service\n\n"
     
     # Create table header
-    comment += "| # | Service Name | Projected Monthly Cost | Action |\n"
-    comment += "|---|--------------|------------------------|--------|\n"
+    comment += "| # | Service Name | Projected Monthly Cost |\n"
+    comment += "|---|--------------|------------------------|\n"
     
     # Track which Cost_Results entries we've already displayed
     displayed_cost_results = set()
@@ -210,7 +210,7 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
     
     # Build table rows (simple table without complex HTML in cells)
     for service_data in services_data:
-        comment += f"| {service_counter} | {service_data['name']} | ${service_data['cost']} | [Show Details](#service-{service_counter}) |\n"
+        comment += f"| {service_counter} | {service_data['name']} | ${service_data['cost']} |\n"
         service_counter += 1
     
     comment += "\n"
@@ -221,15 +221,8 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
         comment += f"<details id=\"service-{service_counter}\">\n"
         comment += f"<summary><b>Service {service_counter}: {service_data['name']} - Show Details</b></summary>\n\n"
         
-        # Add service summary if available
-        if service_data['summary']:
-            comment += "**Service Cost Summary:**\n\n"
-            comment += "```\n" + service_data['summary'].strip() + "\n```\n\n"
-        
         # Add detailed calculations if available
         if service_data['detailed']:
-            comment += "**Detailed Calculation Steps:**\n\n"
-            
             # Check if the detailed cost has the "Individual Resource Costs:" pattern
             if '\nIndividual Resource Costs:' in service_data['detailed']:
                 # Extract individual resource costs and create nested dropdowns
@@ -249,18 +242,21 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
                     # Format this resource section
                     section = "Individual Resource Costs:" + section
                     
-                    # Extract resource type
+                    # Extract resource type/name
                     resource_type_match = re.search(r'ResourceType:\s*([^\n]+)', section)
                     if resource_type_match:
                         resource_type = resource_type_match.group(1).strip()
                         
-                        # Create nested dropdown for this resource
+                        # Create nested dropdown for this resource with resource type as heading
                         comment += f"<details>\n<summary><b>{resource_type}</b></summary>\n\n"
                         comment += f"```\n{section.strip()}\n```\n\n"
                         comment += "</details>\n\n"
             else:
                 # No "Individual Resource Costs:" pattern - display the entire detailed cost as-is
                 comment += f"```\n{service_data['detailed'].strip()}\n```\n\n"
+        elif service_data['summary']:
+            # If only summary is available (no detailed), show just the cost from summary
+            comment += "```\n" + service_data['summary'].strip() + "\n```\n\n"
         
         comment += "</details>\n\n"
         service_counter += 1
