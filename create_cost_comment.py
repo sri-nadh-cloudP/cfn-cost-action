@@ -81,13 +81,14 @@ def create_tag_guardrails_comment(template_name: str, tag_guardrails: dict) -> s
     affected_services = sorted(list(affected_services_set))
     
     # Add new summary format
-    comment += f"#### Tag Violations Found: {total_issues}\n"
+    comment += f"#### 🔺 Tag Violations Found: {total_issues}\n"
     comment += f"#### Services Affected: {', '.join(affected_services) if affected_services else 'None'}\n"
     comment += f"#### Resources Affected: {total_resources}\n"
     comment += "---\n\n"
     
     # Add new heading for service breakdown
-    comment += "### Tag Violation Summary by Service\n\n"
+    comment += "### 🔺 Tag Violation Summary by Service\n\n"
+    
     
     # Process each service
     for service_name, resources in tag_guardrails.items():
