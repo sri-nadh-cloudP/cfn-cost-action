@@ -81,9 +81,9 @@ def create_tag_guardrails_comment(template_name: str, tag_guardrails: dict) -> s
     affected_services = sorted(list(affected_services_set))
     
     # Add new summary format
-    comment += f"#### 🔺 Tag Violations Found: {total_issues}\n"
-    comment += f"#### Services Affected: {', '.join(affected_services) if affected_services else 'None'}\n"
-    comment += f"#### Resources Affected: {total_resources}\n"
+    comment += f"#### 🔺 **Tag Violations Found : ** {total_issues}\n"
+    comment += f"#### **Services Affected : ** {', '.join(affected_services) if affected_services else 'None'}\n"
+    comment += f"#### **Resources Affected : ** {total_resources}\n"
     comment += "---\n\n"
     
     # Add new heading for service breakdown
@@ -186,9 +186,9 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
     
     # Add projected monthly cost and metadata
     comment += f"### Projected Monthly Cost : ${total_cost:.2f}\n"
-    comment += f"#### IAC Language: CloudFormation\n"
-    comment += f"#### Services Included : {', '.join(services_list)}\n"
-    comment += f"#### Cloud Provider : AWS\n\n"
+    comment += f"#### **IAC Language : ** CloudFormation\n"
+    comment += f"#### **Services Included : ** {', '.join(services_list)}\n"
+    comment += f"#### **Cloud Provider : ** AWS\n\n"
     
     comment += "---\n\n"
     
@@ -249,7 +249,9 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
         comment += f"| {service_counter} | {service_data['name']} | ${service_data['cost']} |\n"
         service_counter += 1
     
-    comment += "\n"
+    comment += "\n---\n"
+    
+    comment += "### Detailed Cost Analysis\n\n"
     
     # Now add the detailed sections below the table
     service_counter = 1
