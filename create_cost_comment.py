@@ -41,10 +41,10 @@ def create_tag_guardrails_comment(template_name: str, tag_guardrails: dict) -> s
     
     # Check if tag_guardrails is empty or None
     if not tag_guardrails:
-        return f"## Tag Guardrails Summary: `{template_name}`\n\n✅ **No tag issues found!** All resources follow the required tagging standards.\n\n"
+        return f"## Tag Guardrails Summary : `{template_name}`\n\n✅ **No tag issues found!** All resources follow the required tagging standards.\n\n"
     
     # Start building the comment
-    comment = f"## Tag Guardrails Summary: `{template_name}`\n\n"
+    comment = f"## Tag Guardrails Summary : `{template_name}`\n\n"
     
     total_issues = 0
     total_resources = 0
@@ -59,9 +59,9 @@ def create_tag_guardrails_comment(template_name: str, tag_guardrails: dict) -> s
             total_issues += len(resource_info.get('incorrect_tags', []))
     
     # Add new summary format
-    comment += f"#### Tag Violations Found: {total_issues}\n\n"
-    comment += f"#### Services Affected: {', '.join(affected_services)}\n\n"
-    comment += f"#### Resources Affected: {total_resources}\n\n"
+    comment += f"#### Tag Violations Found: {total_issues}\n"
+    comment += f"#### Services Affected: {', '.join(affected_services)}\n"
+    comment += f"#### Resources Affected: {total_resources}\n"
     comment += "---\n\n"
     
     # Add new heading for service breakdown
@@ -70,11 +70,11 @@ def create_tag_guardrails_comment(template_name: str, tag_guardrails: dict) -> s
     # Process each service
     for service_name, resources in tag_guardrails.items():
         formatted_service_name = service_name.replace('_', ' ')
-        comment += f"#### {formatted_service_name}\n\n"
+        comment += f"### {formatted_service_name}\n\n"
         
         # Process each resource in this service
         for resource_name, resource_info in resources.items():
-            comment += f"##### Resource: `{resource_name}`\n\n"
+            comment += f"#### Resource: `{resource_name}`\n\n"
             
             # Recommendations section (displayed directly)
             recommendations = resource_info.get('recommendations', '')
@@ -146,13 +146,13 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
             services_list.append(formatted_name)
     
     # Start building the comment with header
-    comment = f"## Cost Summary of: `{template_name}`\n\n"
+    comment = f"## Cost Summary of : `{template_name}`\n\n"
     
     # Add projected monthly cost and metadata
-    comment += f"### Projected Monthly Cost: ${total_cost:.2f}\n\n"
-    comment += f"### IAC Language: CloudFormation\n\n"
-    comment += f"### Services Included: {', '.join(services_list)}\n\n"
-    comment += f"### Cloud Provider: AWS\n\n"
+    comment += f"### Projected Monthly Cost : ${total_cost:.2f}\n"
+    comment += f"#### IAC Language: CloudFormation\n"
+    comment += f"#### Services Included : {', '.join(services_list)}\n"
+    comment += f"#### Cloud Provider : AWS\n\n"
     
     comment += "---\n\n"
     
@@ -219,7 +219,7 @@ def create_cost_comment(template_name: str, cost_data: OutputState) -> str:
     service_counter = 1
     for service_data in services_data:
         comment += f"<details id=\"service-{service_counter}\">\n"
-        comment += f"<summary><b>Service {service_counter}: {service_data['name']} - Show Details</b></summary>\n\n"
+        comment += f"<summary><b>Service {service_counter}: {service_data['name']} - <span style=\"color: #0969da;\">Show Details</span></b></summary>\n\n"
         
         # Add detailed calculations if available
         if service_data['detailed']:
