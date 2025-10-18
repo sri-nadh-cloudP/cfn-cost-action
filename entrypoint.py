@@ -334,10 +334,6 @@ def main():
         try:
             template_output = template_data.get("output", {})
             
-            # Debug: Print all keys in template_output
-            print(f"[DEBUG] Template output keys for {template_name}: {template_output.keys()}")
-            print(f"[DEBUG] Template output has Cost_Guardrails: {'Cost_Guardrails' in template_output}")
-            
             # Generate cost comment for this template using the helper function
             from create_cost_comment import create_cost_comment, create_tag_guardrails_comment, create_cost_guardrails_comment
             template_comment = create_cost_comment(template_name, template_output)
@@ -395,15 +391,9 @@ def main():
                 
                 # Also post Cost Guardrails comment if available
                 cost_guardrails = template_output.get('Cost_Guardrails', {})
-                print(f"Cost_Guardrails data present: {bool(cost_guardrails)}")
-                if cost_guardrails:
-                    print(f"Cost_Guardrails keys: {cost_guardrails.keys()}")
-                
                 if cost_guardrails:  # Only post if there are cost guardrails to show
                     try:
-                        print(f"Generating cost guardrails comment for template: {template_name}")
                         cost_guardrail_comment = create_cost_guardrails_comment(template_name, cost_guardrails)
-                        print(f"Cost guardrails comment generated, length: {len(cost_guardrail_comment)} characters")
                         print(f"Posting cost guardrails comment for template: {template_name}")
                         
                         cost_guardrail_payload = {"body": cost_guardrail_comment}
@@ -418,11 +408,7 @@ def main():
                         
                     except Exception as e:
                         print(f"Error posting cost guardrails comment for {template_name}: {str(e)}")
-                        import traceback
-                        print(f"Traceback: {traceback.format_exc()}")
                         print("Continuing...")
-                else:
-                    print(f"No cost guardrails data to post for template: {template_name}")
                 
             except Exception as e:
                 print(f"Error posting comments for {template_name}: {str(e)}")

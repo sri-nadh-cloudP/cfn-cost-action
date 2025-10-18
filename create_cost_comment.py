@@ -156,18 +156,10 @@ def create_tag_guardrails_comment(template_name: str, tag_guardrails: dict) -> s
 def create_cost_guardrails_comment(template_name: str, cost_guardrails: dict) -> str:
     """Create a GitHub comment for Budget/Cost Guardrails information"""
     
-    print(f"[DEBUG] create_cost_guardrails_comment called with template: {template_name}")
-    print(f"[DEBUG] cost_guardrails type: {type(cost_guardrails)}, empty: {not cost_guardrails}")
-    if cost_guardrails:
-        print(f"[DEBUG] cost_guardrails keys: {cost_guardrails.keys()}")
-        print(f"[DEBUG] bu_breaches present: {'bu_breaches' in cost_guardrails}")
-    
     # Check if cost_guardrails is empty or None
     if not cost_guardrails or not cost_guardrails.get('bu_breaches'):
-        print(f"[DEBUG] Returning early - no cost guardrails data")
         return f"## Budget Guardrails Summary : `{template_name}`\n\n✅ **No budget data available or all budgets are within limits.**\n\n"
     
-    print(f"[DEBUG] Generating full cost guardrails comment")
     # Start building the comment
     comment = f"## Budget Guardrails Summary : `{template_name}`\n\n"
     
