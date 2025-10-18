@@ -313,7 +313,7 @@ def main():
             print(f"Error reading sanitized file {sanitized_file}: {str(e)}")
     
     # Send to cost server
-    cost_endpoint = "http://34.66.30.124:8000/evaluate"
+    cost_endpoint = "https://a7ea589310ac.ngrok-free.app/evaluate"
     print(f"Sending sanitized templates to {cost_endpoint}")
     
     headers = {"Content-Type": "application/json"}
@@ -335,7 +335,7 @@ def main():
             template_output = template_data.get("output", {})
             
             # Generate cost comment for this template using the helper function
-            from create_cost_comment import create_cost_comment, create_tag_guardrails_comment
+            from create_cost_comment import create_cost_comment, create_tag_guardrails_comment, create_cost_guardrails_comment
             template_comment = create_cost_comment(template_name, template_output)
             
             # Post comment to the PR
@@ -387,6 +387,27 @@ def main():
                         
                     except Exception as e:
                         print(f"Error posting tag guardrails comment for {template_name}: {str(e)}")
+                        print("Continuing...")
+                
+                # Also post Cost Guardrails comment if available
+                cost_guardrails = template_output.get('Cost_Guardrails', {})
+                if cost_guardrails:  # Only post if there are cost guardrails to show
+                    try:
+                        cost_guardrail_comment = create_cost_guardrails_comment(template_name, cost_guardrails)
+                        print(f"Posting cost guardrails comment for template: {template_name}")
+                        
+                        cost_guardrail_payload = {"body": cost_guardrail_comment}
+                        cost_guardrail_response = requests.post(comment_url, headers=headers, json=cost_guardrail_payload)
+                        
+                        print(f"Cost guardrails response status code: {cost_guardrail_response.status_code}")
+                        if cost_guardrail_response.status_code != 201:
+                            print(f"Cost guardrails response content: {cost_guardrail_response.text[:500]}...")
+                        
+                        cost_guardrail_response.raise_for_status()
+                        print(f"Cost guardrails comment for {template_name} posted successfully!")
+                        
+                    except Exception as e:
+                        print(f"Error posting cost guardrails comment for {template_name}: {str(e)}")
                         print("Continuing...")
                 
             except Exception as e:

@@ -6,6 +6,7 @@ class OutputState(TypedDict):
     Service_Cost_Collector: Dict[str, str]
     Final_Infra_Cost: str
     Tag_Guardrails: dict
+    Cost_Guardrails: dict
     Validation_Output: str
 
 def calculate_total_infrastructure_cost(cost_data: OutputState) -> tuple:
@@ -149,6 +150,107 @@ def create_tag_guardrails_comment(template_name: str, tag_guardrails: dict) -> s
             
             # Add separator between resources
             comment += "---\n\n"
+    
+    return comment
+
+def create_cost_guardrails_comment(template_name: str, cost_guardrails: dict) -> str:
+    """Create a GitHub comment for Budget/Cost Guardrails information"""
+    
+    # Check if cost_guardrails is empty or None
+    if not cost_guardrails or not cost_guardrails.get('bu_breaches'):
+        return f"## Budget Guardrails Summary : `{template_name}`\n\n✅ **No budget data available or all budgets are within limits.**\n\n"
+    
+    # Start building the comment
+    comment = f"## Budget Guardrails Summary : `{template_name}`\n\n"
+    
+    # Get overall analysis
+    overall = cost_guardrails.get('overall_analysis', {})
+    total_budget = overall.get('total_budget', 0.0)
+    total_actual = overall.get('total_actual_cost', 0.0)
+    overall_breach_pct = overall.get('overall_breach_percentage', 0.0)
+    overall_remaining_pct = overall.get('overall_remaining_percentage', 0.0)
+    overall_status = overall.get('overall_status', 'UNKNOWN')
+    
+    # Add overall summary section with visual indicator
+    status_emoji = "✅" if overall_status == "WITHIN_LIMIT" else "🔴"
+    comment += f"### {status_emoji} Overall Budget Status: **{overall_status.replace('_', ' ')}**\n\n"
+    
+    comment += f"#### Total Budget Allocated: ${total_budget:.2f}\n"
+    comment += f"#### Total Actual Cost: ${total_actual:.2f}\n"
+    
+    if overall_status == "WITHIN_LIMIT":
+        comment += f"#### Budget Remaining: {overall_remaining_pct:.2f}%\n"
+    else:
+        comment += f"#### Budget Breach: {overall_breach_pct:.2f}%\n"
+    
+    comment += "\n---\n\n"
+    
+    # Create table for Business Unit breakdown
+    comment += "### 💼 Business Unit Budget Breakdown\n\n"
+    
+    bu_breaches = cost_guardrails.get('bu_breaches', {})
+    
+    # Check if there are any BUs
+    if not bu_breaches:
+        comment += "No business unit data available.\n\n"
+        return comment
+    
+    # Create table header
+    comment += "| Business Unit | Budget Limit | Actual Cost | Usage | Status |\n"
+    comment += "|---------------|--------------|-------------|-------|--------|\n"
+    
+    # Sort BUs - breached ones first, then by name
+    sorted_bus = sorted(bu_breaches.items(), 
+                       key=lambda x: (x[1].get('status') != 'BREACHED', x[0]))
+    
+    # Build table rows
+    for bu_name, bu_data in sorted_bus:
+        budget_limit = bu_data.get('budget_limit', 0.0)
+        actual_cost = bu_data.get('actual_cost', 0.0)
+        breach_pct = bu_data.get('breach_percentage', 0.0)
+        remaining_pct = bu_data.get('remaining_percentage', 0.0)
+        status = bu_data.get('status', 'UNKNOWN')
+        
+        # Calculate usage percentage
+        if budget_limit > 0:
+            usage_pct = (actual_cost / budget_limit) * 100
+        else:
+            usage_pct = 0.0
+        
+        # Format usage with visual indicator
+        if status == 'BREACHED':
+            status_indicator = "🔴 BREACHED"
+            usage_display = f"⚠️ {usage_pct:.1f}% (+{breach_pct:.1f}% over)"
+        else:
+            status_indicator = "✅ Within Limit"
+            usage_display = f"{usage_pct:.1f}% ({remaining_pct:.1f}% remaining)"
+        
+        comment += f"| {bu_name} | ${budget_limit:.2f} | ${actual_cost:.2f} | {usage_display} | {status_indicator} |\n"
+    
+    comment += "\n"
+    
+    # Add detailed analysis section for breached BUs
+    breached_bus = {bu: data for bu, data in bu_breaches.items() 
+                    if data.get('status') == 'BREACHED'}
+    
+    if breached_bus:
+        comment += "---\n\n"
+        comment += "### 🔴 Budget Breach Details\n\n"
+        
+        for bu_name, bu_data in breached_bus.items():
+            budget_limit = bu_data.get('budget_limit', 0.0)
+            actual_cost = bu_data.get('actual_cost', 0.0)
+            breach_pct = bu_data.get('breach_percentage', 0.0)
+            overspend = actual_cost - budget_limit
+            
+            comment += f"<details>\n"
+            comment += f"<summary><b>{bu_name} - <span style=\"color: #d73a49;\">Breached by ${overspend:.2f}</span></b></summary>\n\n"
+            comment += f"**Budget Limit:** ${budget_limit:.2f}\n\n"
+            comment += f"**Actual Cost:** ${actual_cost:.2f}\n\n"
+            comment += f"**Overspend Amount:** ${overspend:.2f}\n\n"
+            comment += f"**Breach Percentage:** {breach_pct:.2f}%\n\n"
+            comment += f"**Recommendation:** Review and optimize resources allocated to the {bu_name} business unit to bring costs within budget.\n\n"
+            comment += "</details>\n\n"
     
     return comment
 
