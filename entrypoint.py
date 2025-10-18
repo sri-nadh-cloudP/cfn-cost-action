@@ -334,6 +334,10 @@ def main():
         try:
             template_output = template_data.get("output", {})
             
+            # Debug: Print all keys in template_output
+            print(f"[DEBUG] Template output keys for {template_name}: {template_output.keys()}")
+            print(f"[DEBUG] Template output has Cost_Guardrails: {'Cost_Guardrails' in template_output}")
+            
             # Generate cost comment for this template using the helper function
             from create_cost_comment import create_cost_comment, create_tag_guardrails_comment, create_cost_guardrails_comment
             template_comment = create_cost_comment(template_name, template_output)
