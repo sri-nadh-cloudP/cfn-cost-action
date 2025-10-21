@@ -245,7 +245,7 @@ def create_cost_guardrails_comment(template_name: str, cost_guardrails: dict) ->
             
             comment += f"<details>\n"
             comment += f"<summary><b>{bu_name} - <span style=\"color: #d73a49;\">Breached by ${overspend:.2f}</span></b></summary>\n\n"
-            comment += "\n\n"
+            comment += "<br>\n\n"
             comment += f"**Budget Limit:** ${budget_limit:.2f}\n\n"
             comment += f"**Actual Cost:** ${actual_cost:.2f}\n\n"
             comment += f"**Overspend Amount:** ${overspend:.2f}\n\n"
