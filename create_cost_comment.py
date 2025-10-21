@@ -158,10 +158,10 @@ def create_cost_guardrails_comment(template_name: str, cost_guardrails: dict) ->
     
     # Check if cost_guardrails is empty or None
     if not cost_guardrails or not cost_guardrails.get('bu_breaches'):
-        return f"## Budget Guardrails Summary : `{template_name}`\n\n✅ **No budget data available or all budgets are within limits.**\n\n"
+        return f"## Cost Guardrails Summary : `{template_name}`\n\n✅ **No budget data available or all budgets are within limits.**\n\n"
     
     # Start building the comment
-    comment = f"## Budget Guardrails Summary : `{template_name}`\n\n"
+    comment = f"## Cost Guardrails Summary : `{template_name}`\n\n"
     
     # Get overall analysis
     overall = cost_guardrails.get('overall_analysis', {})
@@ -176,17 +176,17 @@ def create_cost_guardrails_comment(template_name: str, cost_guardrails: dict) ->
     comment += f"### {status_emoji} Overall Budget Status: **{overall_status.replace('_', ' ')}**\n\n"
     
     comment += f"#### Total Budget Allocated: ${total_budget:.2f}\n"
-    comment += f"#### Total Actual Cost: ${total_actual:.2f}\n"
+    comment += f"#### Total Cost Incured by IaC Template: ${total_actual:.2f}\n"
     
     if overall_status == "WITHIN_LIMIT":
-        comment += f"#### Budget Remaining: {overall_remaining_pct:.2f}%\n"
+        comment += f"#### Budget Remaining: ${total_budget-total_actual:.2f} ({overall_remaining_pct:.2f}%)\n"
     else:
-        comment += f"#### Budget Breach: {overall_breach_pct:.2f}%\n"
+        comment += f"#### Budget Breach: ${total_actual-total_budget:.2f} ({overall_breach_pct:.2f}%)\n"
     
     comment += "\n---\n\n"
     
     # Create table for Business Unit breakdown
-    comment += "### 💼 Business Unit Budget Breakdown\n\n"
+    comment += "### 💼 Budget Breakdown by Business Unit\n\n"
     
     bu_breaches = cost_guardrails.get('bu_breaches', {})
     
@@ -196,7 +196,7 @@ def create_cost_guardrails_comment(template_name: str, cost_guardrails: dict) ->
         return comment
     
     # Create table header
-    comment += "| Business Unit | Budget Limit | Actual Cost | Usage | Status |\n"
+    comment += "| Business Unit | Budget Limit | Cost Incured | Usage | Status |\n"
     comment += "|---------------|--------------|-------------|-------|--------|\n"
     
     # Sort BUs - breached ones first, then by name
@@ -245,6 +245,7 @@ def create_cost_guardrails_comment(template_name: str, cost_guardrails: dict) ->
             
             comment += f"<details>\n"
             comment += f"<summary><b>{bu_name} - <span style=\"color: #d73a49;\">Breached by ${overspend:.2f}</span></b></summary>\n\n"
+            comment += "\n"
             comment += f"**Budget Limit:** ${budget_limit:.2f}\n\n"
             comment += f"**Actual Cost:** ${actual_cost:.2f}\n\n"
             comment += f"**Overspend Amount:** ${overspend:.2f}\n\n"
