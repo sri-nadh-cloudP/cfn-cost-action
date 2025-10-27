@@ -244,11 +244,105 @@ def process_cdk_files(changed_cdk_files, sanitized_dir):
         print()
         
         try:
+            # Convert to absolute path and install dependencies
+            print(f"   📦 Installing dependencies...")
+            cdk_root_path = Path(cdk_root).resolve()
+            cdk_root_abs = str(cdk_root_path)
+            
+            if language == 'python':
+                # Check for requirements.txt or setup.py
+                if (cdk_root_path / 'requirements.txt').exists():
+                    install_result = subprocess.run(
+                        ['pip', 'install', '-r', 'requirements.txt'],
+                        cwd=cdk_root_abs,
+                        capture_output=True,
+                        text=True,
+                        check=False
+                    )
+                    if install_result.returncode != 0:
+                        print(f"   ⚠️  Warning: pip install failed: {install_result.stderr}")
+                    else:
+                        print(f"   ✅ Python dependencies installed")
+                        
+            elif language in ['javascript', 'typescript']:
+                # Install npm dependencies
+                if (cdk_root_path / 'package.json').exists():
+                    install_result = subprocess.run(
+                        ['npm', 'install'],
+                        cwd=cdk_root_abs,
+                        capture_output=True,
+                        text=True,
+                        check=False
+                    )
+                    if install_result.returncode != 0:
+                        print(f"   ⚠️  Warning: npm install failed: {install_result.stderr}")
+                    else:
+                        print(f"   ✅ npm dependencies installed")
+                        
+            elif language == 'java':
+                # Install Java dependencies using Maven or Gradle
+                if (cdk_root_path / 'pom.xml').exists():
+                    install_result = subprocess.run(
+                        ['mvn', 'install', '-DskipTests'],
+                        cwd=cdk_root_abs,
+                        capture_output=True,
+                        text=True,
+                        check=False
+                    )
+                    if install_result.returncode != 0:
+                        print(f"   ⚠️  Warning: mvn install failed: {install_result.stderr}")
+                    else:
+                        print(f"   ✅ Maven dependencies installed")
+                elif (cdk_root_path / 'build.gradle').exists() or (cdk_root_path / 'build.gradle.kts').exists():
+                    install_result = subprocess.run(
+                        ['gradle', 'build', '-x', 'test'],
+                        cwd=cdk_root_abs,
+                        capture_output=True,
+                        text=True,
+                        check=False
+                    )
+                    if install_result.returncode != 0:
+                        print(f"   ⚠️  Warning: gradle build failed: {install_result.stderr}")
+                    else:
+                        print(f"   ✅ Gradle dependencies installed")
+                        
+            elif language == 'go':
+                # Install Go dependencies
+                if (cdk_root_path / 'go.mod').exists():
+                    install_result = subprocess.run(
+                        ['go', 'mod', 'download'],
+                        cwd=cdk_root_abs,
+                        capture_output=True,
+                        text=True,
+                        check=False
+                    )
+                    if install_result.returncode != 0:
+                        print(f"   ⚠️  Warning: go mod download failed: {install_result.stderr}")
+                    else:
+                        print(f"   ✅ Go dependencies installed")
+                        
+            elif language == 'csharp':
+                # Install .NET dependencies
+                csproj_files = list(cdk_root_path.glob('*.csproj'))
+                sln_files = list(cdk_root_path.glob('*.sln'))
+                if csproj_files or sln_files:
+                    install_result = subprocess.run(
+                        ['dotnet', 'restore'],
+                        cwd=cdk_root_abs,
+                        capture_output=True,
+                        text=True,
+                        check=False
+                    )
+                    if install_result.returncode != 0:
+                        print(f"   ⚠️  Warning: dotnet restore failed: {install_result.stderr}")
+                    else:
+                        print(f"   ✅ .NET dependencies installed")
+            
             # Run cdk synth
             print(f"   🔨 Running cdk synth...")
             result = subprocess.run(
                 ['cdk', 'synth'],
-                cwd=cdk_root,
+                cwd=cdk_root_abs,
                 capture_output=True,
                 text=True,
                 check=False
