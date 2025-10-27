@@ -10,6 +10,10 @@ from pathlib import Path
 from cfn_flip import load_yaml, load_json, dump_yaml, dump_json
 from cfn_sanitizer.sanitizer import sanitize_template
 
+# Import CDK detection and cleaning utilities
+from detect_cdk_from_file import is_cdk_file
+from cdk_template_cleaner import CDKTemplateCleaner
+
 
 def run_command(cmd, check=True):
     """Run a shell command and return the output"""
@@ -80,9 +84,10 @@ def is_cloudformation_template(content):
 
 
 def get_changed_files(base_branch, pr_number, github_token, repo_fullname, event_action, before_sha, after_sha):
-    """Get the list of changed CloudFormation files based on the event type"""
+    """Get the list of changed CloudFormation and CDK files based on the event type"""
     try:
-        changed_files = []
+        changed_cfn_files = []
+        changed_cdk_files = []
         
         # For 'synchronize' event, only get files changed in the latest commit
         if event_action == 'synchronize' and before_sha and after_sha:
@@ -123,18 +128,24 @@ def get_changed_files(base_branch, pr_number, github_token, repo_fullname, event
                 print(f"  ⏭️  Skipping deleted file: {filename}")
                 continue
                 
-            # Check if it has a potential CFN extension
+            # Check if it's a potential CFN template (.yaml, .yml, .json)
             if filename.endswith(('.yaml', '.yml', '.json')):
                 print(f"  🔍 Found potential CFN file: {filename} (status: {status})")
-                changed_files.append(filename)
+                changed_cfn_files.append(filename)
+            # Check if it's a potential CDK file (.py, .ts, .js, .java, .cs, .go)
+            elif filename.endswith(('.py', '.ts', '.js', '.mjs', '.java', '.cs', '.go')):
+                print(f"  🔍 Found potential CDK file: {filename} (status: {status})")
+                changed_cdk_files.append(filename)
             else:
                 print(f"  ⏭️  Skipping non-template file: {filename}")
         
-        print(f"\nTotal potential CFN templates to validate: {len(changed_files)}")
-        return changed_files
+        print(f"\nTotal potential CFN templates to validate: {len(changed_cfn_files)}")
+        print(f"Total potential CDK files to check: {len(changed_cdk_files)}")
+        
+        return changed_cfn_files, changed_cdk_files
     except Exception as e:
         print(f"Error getting changed files: {str(e)}")
-        return []
+        return [], []
 
 
 
@@ -164,6 +175,156 @@ def get_file_content(filename, github_token, repo_fullname, pr_number):
     except Exception as e:
         print(f"Error reading file {filename}: {str(e)}")
         raise
+
+
+def process_cdk_files(changed_cdk_files, sanitized_dir):
+    """
+    Process CDK files: detect CDK apps, run cdk synth, clean templates.
+    
+    Args:
+        changed_cdk_files: List of changed CDK file paths
+        sanitized_dir: Directory to store sanitized templates
+        
+    Returns:
+        List of tuples (sanitized_file_path, original_name)
+    """
+    sanitized_list = []
+    
+    if not changed_cdk_files:
+        return sanitized_list
+    
+    print(f"\n{'='*60}")
+    print("PROCESSING CDK FILES")
+    print(f"{'='*60}\n")
+    
+    # Step 1: Detect CDK apps and collect unique CDK roots
+    cdk_apps = {}  # {cdk_root: {'language': ..., 'files': [...]}}
+    
+    for file_path in changed_cdk_files:
+        print(f"🔍 Checking: {file_path}")
+        
+        result = is_cdk_file(file_path)
+        
+        if result['is_cdk']:
+            cdk_root = result['cdk_root']
+            language = result['language']
+            
+            print(f"  ✅ CDK file detected")
+            print(f"     CDK Root: {cdk_root}")
+            print(f"     Language: {language}")
+            
+            if cdk_root not in cdk_apps:
+                cdk_apps[cdk_root] = {
+                    'language': language,
+                    'files': []
+                }
+            cdk_apps[cdk_root]['files'].append(file_path)
+        else:
+            print(f"  ⏭️  Not a CDK app file")
+        print()
+    
+    if not cdk_apps:
+        print("No CDK apps detected. Skipping CDK processing.")
+        return sanitized_list
+    
+    print(f"\n{'='*60}")
+    print(f"Found {len(cdk_apps)} unique CDK app(s)")
+    print(f"{'='*60}\n")
+    
+    # Step 2: Process each unique CDK app
+    cdk_cleaner = CDKTemplateCleaner()
+    
+    for cdk_root, app_info in cdk_apps.items():
+        language = app_info['language']
+        files = app_info['files']
+        
+        print(f"📦 Processing CDK App: {cdk_root}")
+        print(f"   Language: {language}")
+        print(f"   Changed files: {', '.join(files)}")
+        print()
+        
+        try:
+            # Run cdk synth
+            print(f"   🔨 Running cdk synth...")
+            result = subprocess.run(
+                ['cdk', 'synth'],
+                cwd=cdk_root,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode != 0:
+                print(f"   ❌ cdk synth failed:")
+                print(f"      {result.stderr}")
+                continue
+            
+            print(f"   ✅ cdk synth completed successfully")
+            
+            # Find generated templates in cdk.out/
+            cdk_out_dir = Path(cdk_root) / 'cdk.out'
+            if not cdk_out_dir.exists():
+                print(f"   ⚠️  cdk.out directory not found")
+                continue
+            
+            # Get all .template.json files
+            template_files = list(cdk_out_dir.glob('*.template.json'))
+            
+            if not template_files:
+                print(f"   ⚠️  No templates found in cdk.out/")
+                continue
+            
+            print(f"   📄 Found {len(template_files)} template(s)")
+            
+            # Process each generated template
+            for template_file in template_files:
+                template_name = template_file.name
+                print(f"\n   Processing: {template_name}")
+                
+                try:
+                    # Load the CDK template
+                    with open(template_file, 'r') as f:
+                        template = json.load(f)
+                    
+                    # Step 1: Clean CDK metadata
+                    print(f"      🧹 Cleaning CDK metadata...")
+                    cleaned_template = cdk_cleaner.clean_template(template)
+                    
+                    resource_count = len(cleaned_template.get('Resources', {}))
+                    print(f"      ✅ CDK metadata removed ({resource_count} resources)")
+                    
+                    # Step 2: Sanitize sensitive information
+                    print(f"      🔒 Sanitizing sensitive information...")
+                    
+                    # Convert cleaned template to JSON string for sanitization
+                    cleaned_json = json.dumps(cleaned_template, indent=2)
+                    
+                    # Sanitize the template
+                    output_file = sanitized_dir / f"cdk_{template_name}"
+                    if sanitize_template_direct(cleaned_json, output_file, 'json'):
+                        sanitized_list.append((str(output_file), template_name))
+                        print(f"      ✅ Sanitized and saved")
+                    else:
+                        print(f"      ❌ Sanitization failed")
+                        continue
+                    
+                except Exception as e:
+                    print(f"      ❌ Error processing template: {str(e)}")
+                    continue
+            
+        except Exception as e:
+            print(f"   ❌ Error processing CDK app: {str(e)}")
+            continue
+        
+        print()
+    
+    print(f"{'='*60}")
+    print(f"CDK PROCESSING COMPLETE")
+    print(f"{'='*60}")
+    print(f"✅ Successfully processed {len(sanitized_list)} CDK template(s)")
+    print(f"{'='*60}\n")
+    
+    return sanitized_list
 
 
 
@@ -224,25 +385,30 @@ def main():
     except Exception as e:
         print(f"Warning: Git setup failed: {str(e)}")
     
-    # Get list of changed CloudFormation files
-    changed_files = get_changed_files(base_branch, pr_number, github_token, repo_fullname, event_action, before_sha, after_sha)
-    if not changed_files:
-        print("No potential CloudFormation templates changed. Exiting.")
+    # Get list of changed CloudFormation and CDK files
+    changed_cfn_files, changed_cdk_files = get_changed_files(base_branch, pr_number, github_token, repo_fullname, event_action, before_sha, after_sha)
+    
+    if not changed_cfn_files and not changed_cdk_files:
+        print("No CloudFormation or CDK files changed. Exiting.")
         sys.exit(0)
     
     # Create temp directory for sanitized outputs
     sanitized_dir = Path("./sanitized_templates")
     sanitized_dir.mkdir(exist_ok=True)
     
-    # Validate and sanitize each changed template
-    sanitized_list = []
+    # Step 1: Process CDK files first
+    cdk_sanitized_list = process_cdk_files(changed_cdk_files, sanitized_dir)
+    
+    # Step 2: Validate and sanitize normal CFN templates
+    cfn_sanitized_list = []
     validated_cfn_files = []
     
-    print(f"\n{'='*60}")
-    print("VALIDATING CLOUDFORMATION TEMPLATES")
-    print(f"{'='*60}\n")
+    if changed_cfn_files:
+        print(f"\n{'='*60}")
+        print("VALIDATING CLOUDFORMATION TEMPLATES")
+        print(f"{'='*60}\n")
     
-    for file_path in changed_files:
+    for file_path in changed_cfn_files:
         try:
             file_path_obj = Path(file_path)
             base_name = file_path_obj.name
@@ -268,7 +434,7 @@ def main():
                 # Sanitize the template directly
                 out_path = sanitized_dir / base_name
                 if sanitize_template_direct(template_content, out_path, fmt):
-                    sanitized_list.append((str(out_path), file_path_obj.name))
+                    cfn_sanitized_list.append((str(out_path), file_path_obj.name))
                     print(f"  ✅ Successfully sanitized")
                 else:
                     print(f"  ❌ Failed to sanitize")
@@ -284,23 +450,35 @@ def main():
             print()
             continue
     
+    if changed_cfn_files:
+        print(f"\n{'='*60}")
+        print(f"CFN VALIDATION COMPLETE")
+        print(f"{'='*60}")
+        print(f"✅ Validated CFN templates: {len(validated_cfn_files)}")
+        if validated_cfn_files:
+            for f in validated_cfn_files:
+                print(f"   - {f}")
+        print(f"✅ Successfully sanitized CFN: {len(cfn_sanitized_list)}")
+        print(f"{'='*60}\n")
+    
+    # Combine both CDK and CFN templates
+    all_sanitized_templates = cdk_sanitized_list + cfn_sanitized_list
+    
     print(f"\n{'='*60}")
-    print(f"VALIDATION COMPLETE")
+    print(f"FINAL SUMMARY")
     print(f"{'='*60}")
-    print(f"✅ Validated CFN templates: {len(validated_cfn_files)}")
-    if validated_cfn_files:
-        for f in validated_cfn_files:
-            print(f"   - {f}")
-    print(f"✅ Successfully sanitized: {len(sanitized_list)}")
+    print(f"✅ CDK templates: {len(cdk_sanitized_list)}")
+    print(f"✅ CFN templates: {len(cfn_sanitized_list)}")
+    print(f"✅ Total templates to send: {len(all_sanitized_templates)}")
     print(f"{'='*60}\n")
     
-    if not sanitized_list:
-        print("No templates were successfully sanitized. Exiting.")
+    if not all_sanitized_templates:
+        print("No templates were successfully processed. Exiting.")
         sys.exit(0)
     
     # Prepare payload with all sanitized templates
     payload = {"templates": []}
-    for sanitized_file, original_name in sanitized_list:
+    for sanitized_file, original_name in all_sanitized_templates:
         try:
             with open(sanitized_file, 'rb') as f:
                 content = base64.b64encode(f.read()).decode('utf-8')
@@ -313,7 +491,7 @@ def main():
             print(f"Error reading sanitized file {sanitized_file}: {str(e)}")
     
     # Send to cost server
-    cost_endpoint = "https://44522b8d927b.ngrok-free.app/evaluate"
+    cost_endpoint = "https://d6524062ebdf.ngrok-free.app/evaluate"
     print(f"Sending sanitized templates to {cost_endpoint}")
     
     headers = {"Content-Type": "application/json"}
