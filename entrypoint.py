@@ -585,7 +585,7 @@ def main():
             print(f"Error reading sanitized file {sanitized_file}: {str(e)}")
     
     # Send to cost server
-    cost_endpoint = "https://d6524062ebdf.ngrok-free.app/evaluate"
+    cost_endpoint = "https://e7be0da4d870.ngrok-free.app/evaluate"
     print(f"Sending sanitized templates to {cost_endpoint}")
     
     headers = {"Content-Type": "application/json"}
