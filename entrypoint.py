@@ -253,7 +253,7 @@ def process_cdk_files(changed_cdk_files, sanitized_dir):
                 # Check for requirements.txt or setup.py
                 if (cdk_root_path / 'requirements.txt').exists():
                     install_result = subprocess.run(
-                        ['pip', 'install', '-r', 'requirements.txt'],
+                        ['python3', '-m', 'pip', 'install', '-r', 'requirements.txt'],
                         cwd=cdk_root_abs,
                         capture_output=True,
                         text=True,
