@@ -9,10 +9,18 @@ from pathlib import Path
 # Direct imports with proper handling
 from cfn_flip import load_yaml, load_json, dump_yaml, dump_json
 from cfn_sanitizer.sanitizer import sanitize_template
+from create_cost_comment import create_cost_comment, create_tag_guardrails_comment, create_cost_guardrails_comment
 
 # Import CDK detection and cleaning utilities
 from detect_cdk_from_file import is_cdk_file
 from cdk_template_cleaner import CDKTemplateCleaner
+
+# Import CDK synthesis handler (3-step production approach)
+from cdk_synthesis_handler import (
+    detect_cdk_environment,
+    safe_cdk_synth_with_fallbacks,
+    create_cdk_error_pr_comment
+)
 
 
 def run_command(cmd, check=True):
@@ -177,13 +185,17 @@ def get_file_content(filename, github_token, repo_fullname, pr_number):
         raise
 
 
-def process_cdk_files(changed_cdk_files, sanitized_dir):
+def process_cdk_files(changed_cdk_files, sanitized_dir, github_token=None, repo_fullname=None, pr_number=None):
     """
     Process CDK files: detect CDK apps, run cdk synth, clean templates.
+    Now with production-ready 3-step approach!
     
     Args:
         changed_cdk_files: List of changed CDK file paths
         sanitized_dir: Directory to store sanitized templates
+        github_token: GitHub token for posting error comments (optional)
+        repo_fullname: Repo fullname for posting comments (optional)
+        pr_number: PR number for posting comments (optional)
         
     Returns:
         List of tuples (sanitized_file_path, original_name)
@@ -244,14 +256,28 @@ def process_cdk_files(changed_cdk_files, sanitized_dir):
         print()
         
         try:
-            # Convert to absolute path and install dependencies
-            print(f"   📦 Installing dependencies...")
             cdk_root_path = Path(cdk_root).resolve()
             cdk_root_abs = str(cdk_root_path)
             
+            # ============================================================
+            # STEP 1: DETECT ENVIRONMENT
+            # ============================================================
+            print(f"   🔍 Step 1: Detecting environment...")
+            env_info = detect_cdk_environment(cdk_root_path)
+            
+            if env_info['cdk_lib_version']:
+                print(f"   ✅ Detected CDK version: {env_info['cdk_lib_version']}")
+            else:
+                print(f"   ⚠️  Could not detect CDK version")
+            
+            # ============================================================
+            # INSTALL DEPENDENCIES (Use lock files for exact versions!)
+            # ============================================================
+            print(f"   📦 Installing dependencies...")
+            
             if language == 'python':
-                # Check for requirements.txt or setup.py
                 if (cdk_root_path / 'requirements.txt').exists():
+                    # Use python3 -m pip to ensure correct Python version
                     install_result = subprocess.run(
                         ['python3', '-m', 'pip', 'install', '-r', 'requirements.txt'],
                         cwd=cdk_root_abs,
@@ -260,24 +286,31 @@ def process_cdk_files(changed_cdk_files, sanitized_dir):
                         check=False
                     )
                     if install_result.returncode != 0:
-                        print(f"   ⚠️  Warning: pip install failed: {install_result.stderr}")
+                        print(f"   ⚠️  Warning: pip install failed: {install_result.stderr[:100]}")
                     else:
                         print(f"   ✅ Python dependencies installed")
                         
             elif language in ['javascript', 'typescript']:
-                # Install npm dependencies
-                if (cdk_root_path / 'package.json').exists():
-                    install_result = subprocess.run(
-                        ['npm', 'install'],
-                        cwd=cdk_root_abs,
-                        capture_output=True,
-                        text=True,
-                        check=False
-                    )
-                    if install_result.returncode != 0:
-                        print(f"   ⚠️  Warning: npm install failed: {install_result.stderr}")
-                    else:
-                        print(f"   ✅ npm dependencies installed")
+                # Use npm ci if lock file exists (exact versions)
+                # Otherwise fall back to npm install
+                if (cdk_root_path / 'package-lock.json').exists():
+                    print(f"   Using npm ci (exact versions from lock file)...")
+                    install_cmd = ['npm', 'ci']
+                else:
+                    print(f"   Using npm install (no lock file found)...")
+                    install_cmd = ['npm', 'install']
+                
+                install_result = subprocess.run(
+                    install_cmd,
+                    cwd=cdk_root_abs,
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+                if install_result.returncode != 0:
+                    print(f"   ⚠️  Warning: {install_cmd[1]} failed: {install_result.stderr[:100]}")
+                else:
+                    print(f"   ✅ npm dependencies installed")
                         
             elif language == 'java':
                 # Install Java dependencies using Maven or Gradle
@@ -338,40 +371,55 @@ def process_cdk_files(changed_cdk_files, sanitized_dir):
                     else:
                         print(f"   ✅ .NET dependencies installed")
             
-            # Run cdk synth
-            print(f"   🔨 Running cdk synth...")
-            result = subprocess.run(
-                ['cdk', 'synth'],
-                cwd=cdk_root_abs,
-                capture_output=True,
-                text=True,
-                check=False
-            )
+            # ============================================================
+            # STEP 2: GRACEFUL DEGRADATION - CDK SYNTH WITH FALLBACKS
+            # ============================================================
+            print(f"   🔨 Step 2: Running CDK synthesis with fallbacks...")
+            synth_result = safe_cdk_synth_with_fallbacks(cdk_root_path, language)
             
-            if result.returncode != 0:
-                print(f"   ❌ cdk synth failed:")
-                print(f"      {result.stderr}")
+            if not synth_result['success']:
+                # ========================================================
+                # STEP 3: INTELLIGENT ERROR REPORTING
+                # ========================================================
+                print(f"   ❌ CDK synth failed after {len(synth_result['attempts'])} attempts")
+                print(f"      Error type: {synth_result['error']['type']}")
+                
+                # Post helpful error comment to PR if credentials available
+                if github_token and repo_fullname and pr_number:
+                    try:
+                        print(f"   💬 Step 3: Posting helpful guidance to PR...")
+                        error_comment = create_cdk_error_pr_comment(cdk_root, env_info, synth_result)
+                        
+                        comment_url = f"https://api.github.com/repos/{repo_fullname}/issues/{pr_number}/comments"
+                        headers = {
+                            "Authorization": f"token {github_token}",
+                            "Accept": "application/vnd.github.v3+json"
+                        }
+                        response = requests.post(comment_url, headers=headers, json={"body": error_comment})
+                        
+                        if response.status_code == 201:
+                            print(f"   ✅ Error guidance posted to PR")
+                        else:
+                            print(f"   ⚠️  Could not post comment: {response.status_code}")
+                    except Exception as e:
+                        print(f"   ⚠️  Could not post error comment: {e}")
+                
+                # Continue with next CDK app instead of failing entire action
+                print(f"   ⏭️  Skipping this CDK app, continuing with others...")
                 continue
             
-            print(f"   ✅ cdk synth completed successfully")
+            # ============================================================
+            # SUCCESS! Process generated templates
+            # ============================================================
+            print(f"   ✅ CDK synth succeeded using '{synth_result['strategy_used']}' strategy")
+            print(f"   📄 Found {len(synth_result['templates'])} template(s)")
             
-            # Find generated templates in cdk.out/
-            cdk_out_dir = Path(cdk_root) / 'cdk.out'
-            if not cdk_out_dir.exists():
-                print(f"   ⚠️  cdk.out directory not found")
-                continue
-            
-            # Get all .template.json files
-            template_files = list(cdk_out_dir.glob('*.template.json'))
-            
-            if not template_files:
-                print(f"   ⚠️  No templates found in cdk.out/")
-                continue
-            
-            print(f"   📄 Found {len(template_files)} template(s)")
+            # Show warnings if any
+            for warning in synth_result['warnings']:
+                print(f"   ⚠️  {warning}")
             
             # Process each generated template
-            for template_file in template_files:
+            for template_file in synth_result['templates']:
                 template_name = template_file.name
                 print(f"\n   Processing: {template_name}")
                 
@@ -490,8 +538,14 @@ def main():
     sanitized_dir = Path("./sanitized_templates")
     sanitized_dir.mkdir(exist_ok=True)
     
-    # Step 1: Process CDK files first
-    cdk_sanitized_list = process_cdk_files(changed_cdk_files, sanitized_dir)
+    # Step 1: Process CDK files first (with 3-step production approach)
+    cdk_sanitized_list = process_cdk_files(
+        changed_cdk_files, 
+        sanitized_dir,
+        github_token=github_token,
+        repo_fullname=repo_fullname,
+        pr_number=pr_number
+    )
     
     # Step 2: Validate and sanitize normal CFN templates
     cfn_sanitized_list = []
@@ -585,7 +639,7 @@ def main():
             print(f"Error reading sanitized file {sanitized_file}: {str(e)}")
     
     # Send to cost server
-    cost_endpoint = "https://e7be0da4d870.ngrok-free.app/evaluate"
+    cost_endpoint = "https://b307b0a51ce4.ngrok-free.app/evaluate"
     print(f"Sending sanitized templates to {cost_endpoint}")
     
     headers = {"Content-Type": "application/json"}
@@ -607,7 +661,6 @@ def main():
             template_output = template_data.get("output", {})
             
             # Generate cost comment for this template using the helper function
-            from create_cost_comment import create_cost_comment, create_tag_guardrails_comment, create_cost_guardrails_comment
             template_comment = create_cost_comment(template_name, template_output)
             
             # Post comment to the PR
