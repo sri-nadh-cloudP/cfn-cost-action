@@ -53,18 +53,20 @@ def detect_cdk_environment(cdk_root_path: Path) -> Dict[str, Any]:
     env_info['has_requirements_txt'] = (cdk_root_path / 'requirements.txt').exists()
     env_info['has_cdk_json'] = (cdk_root_path / 'cdk.json').exists()
     
-    # Detect CDK library version from lock files
+    # Detect CDK library version from configuration files
     try:
-        if env_info['has_package_lock']:
-            package_json_path = cdk_root_path / 'package.json'
-            if package_json_path.exists():
-                with open(package_json_path, 'r') as f:
-                    pkg = json.load(f)
-                    cdk_lib = pkg.get('dependencies', {}).get('aws-cdk-lib', '')
+        # Try Node.js/TypeScript projects
+        package_json_path = cdk_root_path / 'package.json'
+        if package_json_path.exists():
+            with open(package_json_path, 'r') as f:
+                pkg = json.load(f)
+                cdk_lib = pkg.get('dependencies', {}).get('aws-cdk-lib', '')
+                if cdk_lib:
                     env_info['cdk_lib_version'] = cdk_lib
                     env_info['language'] = 'javascript'
         
-        elif env_info['has_requirements_txt']:
+        # Try Python projects
+        if not env_info['cdk_lib_version'] and env_info['has_requirements_txt']:
             requirements_path = cdk_root_path / 'requirements.txt'
             with open(requirements_path, 'r') as f:
                 for line in f:
