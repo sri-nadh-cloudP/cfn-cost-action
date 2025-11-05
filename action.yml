@@ -6,6 +6,10 @@ inputs:
     description: "GitHub token with repo write permissions"
     required: true
     default: ${{ github.token }}
+  log-level:
+    description: "Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
+    required: false
+    default: "INFO"
 runs:
   using: "docker"
   image: "Dockerfile"

@@ -1,5 +1,5 @@
 """
-Simple CDK File Detector
+This Module serves as a CDK File Detector.
 
 Given a file path (from git diff), determine if it's part of a CDK app.
 If yes, return the CDK app root directory where you should run cdk synth.
@@ -175,32 +175,4 @@ def _detect_language(cdk_root: Path) -> str:
     
     return 'unknown'
 
-
-# Example usage
-if __name__ == "__main__":
-    import sys
-    
-    if len(sys.argv) < 2:
-        print("Usage: python detect_cdk_from_file.py <file_path>")
-        print("\nExample:")
-        print("  python detect_cdk_from_file.py app.py")
-        print("  python detect_cdk_from_file.py src/stack.ts")
-        sys.exit(1)
-    
-    file_path = sys.argv[1]
-    result = is_cdk_file(file_path)
-    
-    print(f"File: {file_path}")
-    print("-" * 60)
-    
-    if result['is_cdk']:
-        print("✅ CDK File Detected")
-        print(f"   CDK Root: {result['cdk_root']}")
-        print(f"   Language: {result['language']}")
-        print(f"\n💡 To synthesize:")
-        print(f"   cd {result['cdk_root']}")
-        print(f"   cdk synth")
-    else:
-        print("❌ Not a CDK File")
-        print("   This is a regular file, not part of a CDK app")
 

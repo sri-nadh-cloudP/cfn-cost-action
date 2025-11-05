@@ -1,6 +1,4 @@
 """
-CDK Synthesis Handler - Production-ready 3-step approach for CDK synthesis
-
 This module handles CDK environment detection, adaptive synthesis with fallbacks,
 and intelligent error classification for diverse customer CDK setups.
 

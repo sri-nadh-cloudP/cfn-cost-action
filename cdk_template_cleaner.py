@@ -1,5 +1,5 @@
 """
-CDK Template Cleaner - Filters CDK-specific metadata from synthesized CloudFormation templates.
+This Module Filters CDK-specific metadata from synthesized CloudFormation templates.
 
 This utility removes CDK-specific elements that are not needed for cost analysis:
 - CDK Metadata resources
@@ -238,27 +238,4 @@ def clean_cdk_template_file(
     return cleaner.clean_template_file(input_path, output_path)
 
 
-if __name__ == "__main__":
-    # Example usage
-    import sys
-    
-    if len(sys.argv) < 2:
-        print("Usage: python cdk_template_cleaner.py <input_template.json> [output_template.json]")
-        sys.exit(1)
-    
-    input_file = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) > 2 else None
-    
-    cleaner = CDKTemplateCleaner()
-    
-    print(f"Reading template from: {input_file}")
-    template = clean_cdk_template_file(input_file, output_file)
-    
-    if output_file:
-        print(f"Cleaned template saved to: {output_file}")
-    else:
-        print("\nCleaned Template:")
-        print(json.dumps(template, indent=2))
-    
-    print(f"\nCleaned template has {len(template.get('Resources', {}))} resources")
 
