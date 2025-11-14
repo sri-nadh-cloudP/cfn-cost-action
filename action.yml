@@ -6,6 +6,9 @@ inputs:
     description: "GitHub token with repo write permissions"
     required: true
     default: ${{ github.token }}
+  api-key:
+    description: "CloudPostive API key for cost estimation"
+    required: true
   log-level:
     description: "Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
     required: false
@@ -15,3 +18,4 @@ runs:
   image: "Dockerfile"
   args:
     - ${{ inputs.github-token }}
+    - ${{ inputs.api-key }}

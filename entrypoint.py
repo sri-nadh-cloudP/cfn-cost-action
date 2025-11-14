@@ -482,6 +482,7 @@ def main():
     
     # Get inputs from environment variables (set by GitHub Actions)
     github_token = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("INPUT_GITHUB-TOKEN")
+    api_key = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("INPUT_API-KEY")
     
     # Debug token permissions (output first few chars only for security)
     if github_token:
@@ -489,6 +490,14 @@ def main():
         logger.info(f"Using GitHub token starting with: {token_preview}")
     else:
         logger.critical("No GitHub token provided!")
+        sys.exit(1)
+    
+    # Validate API key
+    if api_key:
+        api_key_preview = api_key[:4] + "..." if len(api_key) > 4 else "invalid"
+        logger.info(f"Using API key starting with: {api_key_preview}")
+    else:
+        logger.critical("No API key provided!")
         sys.exit(1)
     
     repo_fullname = os.environ.get("GITHUB_REPOSITORY")
@@ -652,7 +661,10 @@ def main():
     cost_endpoint = "https://b307b0a51ce4.ngrok-free.app/evaluate"
     logger.info(f"Sending sanitized templates to {cost_endpoint}")
     
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "X-API-Key": api_key
+    }
     response = requests.post(cost_endpoint, headers=headers, json=payload)
     response.raise_for_status()  # Raise an exception for 4XX/5XX responses
     
