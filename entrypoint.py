@@ -660,10 +660,12 @@ def main():
     # Send to cost server
     cost_endpoint = "https://b307b0a51ce4.ngrok-free.app/evaluate"
     logger.info(f"Sending sanitized templates to {cost_endpoint}")
+    logger.info(f"Repository: {repo_fullname}")
     
     headers = {
         "Content-Type": "application/json",
-        "X-API-Key": api_key
+        "X-API-Key": api_key,
+        "X-GitHub-Repository": repo_fullname
     }
     response = requests.post(cost_endpoint, headers=headers, json=payload)
     response.raise_for_status()  # Raise an exception for 4XX/5XX responses
